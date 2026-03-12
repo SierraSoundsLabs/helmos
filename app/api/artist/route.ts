@@ -25,7 +25,8 @@ export async function GET(request: NextRequest) {
     if (message === "Artist not found") {
       return NextResponse.json({ error: "Artist not found on Spotify" }, { status: 404 });
     }
-    console.error("Artist fetch error:", err);
-    return NextResponse.json({ error: "Failed to fetch artist data" }, { status: 500 });
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("Artist fetch error:", errMsg);
+    return NextResponse.json({ error: "Failed to fetch artist data", detail: errMsg }, { status: 500 });
   }
 }
