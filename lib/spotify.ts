@@ -100,30 +100,7 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").replace(/\. Read more.*$/i, "").trim();
 }
 
-// Scrape real Spotify monthly listeners from the public artist page
-async function scrapeSpotifyMonthlyListeners(artistId: string): Promise<number | null> {
-  try {
-    const res = await fetch(`https://open.spotify.com/artist/${artistId}`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      next: { revalidate: 3600 }, // cache 1hr
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    // Pattern 1: JSON in page data
-    const m1 = html.match(/"monthlyListeners"\s*:\s*(\d+)/);
-    if (m1) return parseInt(m1[1]);
-    // Pattern 2: visible text on page "X monthly listeners"
-    const m2 = html.match(/([\d,]+)\s+monthly listener/i);
-    if (m2) return parseInt(m2[1].replace(/,/g, ""));
-    return null;
-  } catch {
-    return null;
-  }
-}
+
 
 async function getLastFmData(artistName: string): Promise<{ listeners: number; playcount: number; tags: string[]; bio: string }> {
   const LASTFM_KEY = "b25b959554ed76058ac220b7b2e0a026";
@@ -182,18 +159,17 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
   }
   const artist = await artistRes.json();
 
-  // Parallel: top tracks, discography, monthly listeners scrape, Last.fm
-  const [topTracksRes, albumsRes, monthlyListenersRaw] = await Promise.all([
+  // Parallel: top tracks + discography
+  const [topTracksRes, albumsRes] = await Promise.all([
     fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`, { headers })
       .then(r => r.ok ? r.json() : { tracks: [] })
       .catch(() => ({ tracks: [] })),
     fetch(`https://api.spotify.com/v1/artists/${artistId}/albums?limit=50&include_groups=album,single,ep&market=US`, { headers })
       .then(r => r.ok ? r.json() : { items: [] })
       .catch(() => ({ items: [] })),
-    scrapeSpotifyMonthlyListeners(artistId),
   ]);
 
-  const lastfm = await getLastFmData(artist.name);
+  const lastfm = await getLastFmData(artist.name).catch(() => ({ listeners: 0, playcount: 0, tags: [], bio: "" }));
 
   // Spotify direct endpoint: use real popularity + genres + followers
   const spotifyPopularity: number = typeof artist.popularity === "number" ? artist.popularity : 0;
@@ -233,18 +209,16 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
     spotifyUrl: a.external_urls?.spotify || "",
   }));
 
-  // Monthly listeners: prefer real Spotify scrape, fall back to Last.fm
-  const listenersRaw = monthlyListenersRaw ?? lastfm.listeners;
-  const bigWin = deriveBigWin(allReleases, spotifyFollowers, listenersRaw);
+  const bigWin = deriveBigWin(allReleases, spotifyFollowers, spotifyFollowers);
 
   return {
     id: artist.id,
     name: artist.name,
     image: artist.images?.[0]?.url || "",
     bio: lastfm.bio,
-    followers: lastfm.listeners,
-    monthlyListeners: listenersRaw > 0 ? formatNumber(listenersRaw) : "—",
-    monthlyListenersRaw: listenersRaw,
+    followers: spotifyFollowers,
+    monthlyListeners: spotifyFollowers > 0 ? formatNumber(spotifyFollowers) : "—",
+    monthlyListenersRaw: spotifyFollowers,
     genres,
     spotifyPopularity,
     spotifyFollowers,

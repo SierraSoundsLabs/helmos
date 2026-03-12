@@ -72,7 +72,7 @@ export async function analyzeArtist(artistData: ArtistData): Promise<AnalysisRes
 Artist:
 - Name: ${artistData.name}
 - Genres: ${artistData.genres.join(", ") || "Independent"}
-- Spotify Monthly Listeners: ${listeners > 0 ? listeners.toLocaleString() : "unknown"} (real Spotify data)
+- Spotify Followers: ${listeners > 0 ? listeners.toLocaleString() : "unknown"} (from Spotify API)
 - Spotify Popularity Score: ${artistData.spotifyPopularity}/100
 - Spotify Followers: ${artistData.spotifyFollowers.toLocaleString()}
 - Most Popular Track: ${artistData.topSong?.name || "Unknown"} (popularity: ${artistData.topSong?.popularity || 0}/100)

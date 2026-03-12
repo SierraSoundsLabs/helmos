@@ -87,9 +87,9 @@ function DashboardView({ artist, analysis }: { artist: ArtistData; analysis: Ana
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Monthly Listeners", value: artist.monthlyListeners, note: "Spotify" },
+          { label: "Followers", value: artist.monthlyListeners, note: "Spotify" },
           { label: "Popularity", value: `${artist.spotifyPopularity}/100`, note: "Spotify score" },
-          { label: "Followers", value: artist.spotifyFollowers > 0 ? new Intl.NumberFormat().format(artist.spotifyFollowers) : "—", note: "Spotify" },
+          { label: "Top Song", value: artist.topSong?.name ? artist.topSong.name.slice(0, 14) + (artist.topSong.name.length > 14 ? "…" : "") : "—", note: artist.topSong ? `${artist.topSong.popularity}/100 popularity` : "" },
           { label: "Releases", value: String(artist.allReleases.length), note: "on Spotify" },
         ].map(s => (
           <div key={s.label} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4">
