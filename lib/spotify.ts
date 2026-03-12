@@ -1,4 +1,9 @@
-const LASTFM_KEY = "b25b959554ed76058ac220b7b2e0a026";
+// ─────────────────────────────────────────────────────────────────────────────
+// Helmos data layer
+//   Spotify  → artist identity, discography
+//   Last.fm  → bio, genres/tags, top tracks
+//   Chartmetric → monthly listeners, Spotify followers (the real stats)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface Release {
   id: string;
@@ -17,11 +22,12 @@ export interface ArtistData {
   bio: string;
   genres: string[];
   spotifyUrl: string;
-  // Listener stats (Last.fm)
-  weeklyListeners: number;
-  weeklyListenersFormatted: string;
-  totalScrobbles: number;
-  totalScrobblesFormatted: string;
+  // Core stats (Chartmetric when available)
+  monthlyListeners: number;
+  monthlyListenersFormatted: string;
+  spotifyFollowers: number;
+  spotifyFollowersFormatted: string;
+  statsSource: 'chartmetric' | 'none';
   // Top tracks (Last.fm)
   topSong: { name: string; playcount: string; albumArt: string; spotifyUrl: string } | null;
   topTracks: { id: string; name: string; playcount: string; albumArt: string; previewUrl: string | null; spotifyUrl: string }[];
@@ -30,18 +36,23 @@ export interface ArtistData {
   monthsAgoLastRelease: number | null;
   allReleases: Release[];
   bigWin: string | null;
-  // Legacy compat (used in claude.ts)
+  // Legacy compat fields
   followers: number;
-  monthlyListeners: string;
   monthlyListenersRaw: number;
   spotifyPopularity: number;
-  spotifyFollowers: number;
+  // Old fields kept for claude.ts compat
+  weeklyListeners: number;
+  weeklyListenersFormatted: string;
+  totalScrobbles: number;
+  totalScrobblesFormatted: string;
 }
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
+// ─── Spotify auth ─────────────────────────────────────────────────────────────
+
+let spotifyCache: { token: string; expiresAt: number } | null = null;
 
 async function getSpotifyToken(): Promise<string> {
-  if (cachedToken && Date.now() < cachedToken.expiresAt) return cachedToken.token;
+  if (spotifyCache && Date.now() < spotifyCache.expiresAt) return spotifyCache.token;
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new Error("Missing Spotify credentials");
@@ -55,8 +66,8 @@ async function getSpotifyToken(): Promise<string> {
   });
   if (!res.ok) throw new Error(`Spotify token error: ${res.status}`);
   const data = await res.json();
-  cachedToken = { token: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
-  return cachedToken.token;
+  spotifyCache = { token: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
+  return spotifyCache.token;
 }
 
 export function extractArtistId(input: string): string | null {
@@ -68,23 +79,81 @@ export function extractArtistId(input: string): string | null {
   return null;
 }
 
-function monthsAgo(dateStr: string): number {
-  const d = new Date(dateStr);
-  const now = new Date();
-  return Math.max(0, (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth()));
+// ─── Chartmetric auth + stats ─────────────────────────────────────────────────
+
+let cmCache: { token: string; expiresAt: number } | null = null;
+
+async function getChartmetricToken(): Promise<string | null> {
+  const refreshToken = process.env.CHARTMETRIC_REFRESH_TOKEN;
+  if (!refreshToken) return null;
+  if (cmCache && Date.now() < cmCache.expiresAt) return cmCache.token;
+  try {
+    const res = await fetch("https://api.chartmetric.com/api/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshtoken: refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.token) return null;
+    cmCache = { token: data.token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
+    return cmCache.token;
+  } catch {
+    return null;
+  }
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
-  return n.toLocaleString();
+async function cmGet(path: string, token: string) {
+  const res = await fetch(`https://api.chartmetric.com${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.obj ?? data;
 }
 
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").replace(/\. Read more.*$/i, "").trim();
+interface ChartmetricStats {
+  monthlyListeners: number;
+  spotifyFollowers: number;
 }
 
-// ── Last.fm ─────────────────────────────────────────────────────────────────
+async function getChartmetricStats(spotifyArtistId: string): Promise<ChartmetricStats | null> {
+  const token = await getChartmetricToken();
+  if (!token) return null;
+
+  try {
+    // Step 1: Resolve Spotify ID → Chartmetric ID
+    const ids = await cmGet(`/api/artist/spotify/${spotifyArtistId}/get-ids`, token);
+    if (!ids || ids.length === 0) return null;
+    const cmId = ids[0].cm_artist;
+    if (!cmId) return null;
+
+    // Step 2: Fetch listeners + followers in parallel
+    const [listenersData, followersData] = await Promise.all([
+      cmGet(`/api/artist/${cmId}/stat/spotify?field=listeners&latest=true`, token),
+      cmGet(`/api/artist/${cmId}/stat/spotify?field=followers&latest=true`, token),
+    ]);
+
+    // listeners data is an array — take the last value
+    const listenersArr = listenersData?.listeners ?? [];
+    const followersArr = followersData?.followers ?? [];
+
+    const latestListeners = listenersArr.length > 0 ? listenersArr[listenersArr.length - 1]?.value ?? 0 : 0;
+    const latestFollowers = followersArr.length > 0 ? followersArr[followersArr.length - 1]?.value ?? 0 : 0;
+
+    return {
+      monthlyListeners: Number(latestListeners) || 0,
+      spotifyFollowers: Number(latestFollowers) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Last.fm (bio, tags, top tracks only) ────────────────────────────────────
+
+const LASTFM_KEY = process.env.LASTFM_API_KEY || "b25b959554ed76058ac220b7b2e0a026";
+
 async function lastfmGet(params: Record<string, string>) {
   const q = new URLSearchParams({ ...params, api_key: LASTFM_KEY, format: "json" });
   const res = await fetch(`https://ws.audioscrobbler.com/2.0/?${q}`);
@@ -92,19 +161,20 @@ async function lastfmGet(params: Record<string, string>) {
   return res.json();
 }
 
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").replace(/\. Read more.*$/i, "").trim();
+}
+
 async function getLastFmArtist(name: string) {
   try {
-    const [info, topTracks, topAlbums] = await Promise.all([
+    const [info, topTracks] = await Promise.all([
       lastfmGet({ method: "artist.getinfo", artist: name }),
       lastfmGet({ method: "artist.gettoptracks", artist: name, limit: "5" }),
-      lastfmGet({ method: "artist.gettopalbums", artist: name, limit: "10" }),
     ]);
 
     const artist = info?.artist;
     const rawBio = artist?.bio?.summary || artist?.bio?.content || "";
     const bio = stripHtml(rawBio).slice(0, 600);
-    const listeners = parseInt(artist?.stats?.listeners || "0");
-    const playcount = parseInt(artist?.stats?.playcount || "0");
     const tags = (artist?.tags?.tag || []).slice(0, 5).map((t: { name: string }) => t.name);
 
     const tracks = (topTracks?.toptracks?.track || []).slice(0, 5).map((t: {
@@ -122,27 +192,14 @@ async function getLastFmArtist(name: string) {
       spotifyUrl: t.url || "",
     }));
 
-    const albums = (topAlbums?.topalbums?.album || []).map((a: {
-      name: string; playcount: number;
-      image?: { "#text": string }[];
-      url?: string;
-    }) => ({
-      id: a.name,
-      name: a.name,
-      type: "album",
-      releaseDate: "",
-      totalTracks: 0,
-      albumArt: a.image?.[2]?.["#text"] || "",
-      spotifyUrl: a.url || "",
-    }));
-
-    return { bio, listeners, playcount, tags, tracks, albums };
+    return { bio, tags, tracks };
   } catch {
-    return { bio: "", listeners: 0, playcount: 0, tags: [], tracks: [], albums: [] };
+    return { bio: "", tags: [], tracks: [] };
   }
 }
 
-// ── Spotify discography (with retry on 429) ─────────────────────────────────
+// ─── Spotify discography ──────────────────────────────────────────────────────
+
 async function getSpotifyAlbums(artistId: string, token: string): Promise<Release[]> {
   try {
     const res = await fetch(
@@ -150,57 +207,66 @@ async function getSpotifyAlbums(artistId: string, token: string): Promise<Releas
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (res.status === 429) {
-      // Rate limited — try once more after delay
-      const retryAfter = parseInt(res.headers.get("retry-after") || "2");
-      await new Promise(r => setTimeout(r, Math.min(retryAfter * 1000, 5000)));
+      await new Promise(r => setTimeout(r, Math.min(parseInt(res.headers.get("retry-after") || "2") * 1000, 5000)));
       const res2 = await fetch(
         `https://api.spotify.com/v1/artists/${artistId}/albums?limit=50&include_groups=album,single,ep`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res2.ok) return [];
       const d = await res2.json();
-      return d.items || [];
+      return mapReleases(d.items || []);
     }
     if (!res.ok) return [];
     const d = await res.json();
-    return (d.items || []).map((a: {
-      id: string; name: string; album_type: string; release_date: string;
-      total_tracks: number; images?: { url: string }[]; external_urls?: { spotify: string };
-    }) => ({
-      id: a.id,
-      name: a.name,
-      type: a.album_type,
-      releaseDate: a.release_date,
-      totalTracks: a.total_tracks,
-      albumArt: a.images?.[0]?.url || "",
-      spotifyUrl: a.external_urls?.spotify || "",
-    }));
-  } catch {
-    return [];
-  }
+    return mapReleases(d.items || []);
+  } catch { return []; }
 }
 
-function deriveBigWin(releases: Release[], listeners: number, playcount: number, tracks: { name: string }[]): string | null {
+function mapReleases(items: any[]): Release[] {
+  return items.map(a => ({
+    id: a.id,
+    name: a.name,
+    type: a.album_type,
+    releaseDate: a.release_date,
+    totalTracks: a.total_tracks,
+    albumArt: a.images?.[0]?.url || "",
+    spotifyUrl: a.external_urls?.spotify || "",
+  }));
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function monthsAgo(dateStr: string): number {
+  const d = new Date(dateStr);
+  const now = new Date();
+  return Math.max(0, (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth()));
+}
+
+export function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return n.toLocaleString();
+}
+
+function deriveBigWin(releases: Release[], monthlyListeners: number, cmStats: ChartmetricStats | null, tracks: { name: string }[]): string | null {
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   const recent = releases.filter(r => r.releaseDate && new Date(r.releaseDate) >= oneYearAgo);
 
   if (recent.length >= 3) return `Released ${recent.length} projects in the last year — strong output momentum`;
-  if (recent.length === 1) {
-    const r = recent[0];
-    return `Dropped "${r.name}" (${r.type}) — new release in market`;
-  }
-  if (playcount >= 1_000_000) return `${formatNumber(playcount)} Last.fm scrobbles — proven listener engagement`;
-  if (listeners >= 10_000) return `${formatNumber(listeners)} weekly listeners on Last.fm — real active audience`;
-  if (tracks.length > 0) return `Catalog indexed across ${releases.length} releases — ready for royalty audit and sync pitching`;
+  if (recent.length === 1) return `Dropped "${recent[0].name}" (${recent[0].type}) — new release in market`;
+  if (cmStats && monthlyListeners >= 100_000) return `${formatNumber(monthlyListeners)} monthly listeners on Spotify — proven audience`;
+  if (cmStats && monthlyListeners >= 10_000) return `${formatNumber(monthlyListeners)} monthly listeners — real active fanbase`;
+  if (releases.length > 0) return `Catalog of ${releases.length} releases — ready for royalty audit and sync pitching`;
   return null;
 }
 
-// ── Main export ──────────────────────────────────────────────────────────────
+// ─── Main export ──────────────────────────────────────────────────────────────
+
 export async function fetchArtistData(artistId: string): Promise<ArtistData> {
   const token = await getSpotifyToken();
 
-  // Spotify: just the artist object (name, image, URI — that's all they return now)
+  // Spotify: artist identity
   const artistRes = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -211,27 +277,27 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
   const artist = await artistRes.json();
   if (!artist?.name) throw new Error("Artist not found");
 
-  // Parallel: Spotify albums + Last.fm (all stats)
-  const [spotifyReleases, lastfm] = await Promise.all([
+  // Parallel: Spotify discography + Last.fm (bio/tags/tracks) + Chartmetric (stats)
+  const [spotifyReleases, lastfm, cmStats] = await Promise.all([
     getSpotifyAlbums(artistId, token),
     getLastFmArtist(artist.name),
+    getChartmetricStats(artistId),
   ]);
 
-  // Sort releases newest first
   const allReleases = spotifyReleases.sort(
     (a, b) => new Date(b.releaseDate || "").getTime() - new Date(a.releaseDate || "").getTime()
   );
   const latestRelease = allReleases[0] || null;
-
-  // Merge genres: Last.fm tags (Spotify no longer returns genres in dev mode)
   const genres = lastfm.tags.length > 0 ? lastfm.tags : ["Independent"];
-
-  // Top song from Last.fm
   const topSong = lastfm.tracks[0]
     ? { name: lastfm.tracks[0].name, playcount: lastfm.tracks[0].playcount, albumArt: lastfm.tracks[0].albumArt, spotifyUrl: lastfm.tracks[0].spotifyUrl }
     : null;
 
-  const bigWin = deriveBigWin(allReleases, lastfm.listeners, lastfm.playcount, lastfm.tracks);
+  const monthlyListeners = cmStats?.monthlyListeners ?? 0;
+  const spotifyFollowers = cmStats?.spotifyFollowers ?? 0;
+  const statsSource: 'chartmetric' | 'none' = cmStats ? 'chartmetric' : 'none';
+
+  const bigWin = deriveBigWin(allReleases, monthlyListeners, cmStats, lastfm.tracks);
 
   return {
     id: artistId,
@@ -240,21 +306,24 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
     bio: lastfm.bio,
     genres,
     spotifyUrl: artist.external_urls?.spotify || `https://open.spotify.com/artist/${artistId}`,
-    weeklyListeners: lastfm.listeners,
-    weeklyListenersFormatted: lastfm.listeners > 0 ? formatNumber(lastfm.listeners) : "—",
-    totalScrobbles: lastfm.playcount,
-    totalScrobblesFormatted: lastfm.playcount > 0 ? formatNumber(lastfm.playcount) : "—",
+    monthlyListeners,
+    monthlyListenersFormatted: monthlyListeners > 0 ? formatNumber(monthlyListeners) : "—",
+    spotifyFollowers,
+    spotifyFollowersFormatted: spotifyFollowers > 0 ? formatNumber(spotifyFollowers) : "—",
+    statsSource,
     topSong,
     topTracks: lastfm.tracks,
     latestRelease,
     monthsAgoLastRelease: latestRelease ? monthsAgo(latestRelease.releaseDate) : null,
     allReleases,
     bigWin,
-    // Compat fields for claude.ts
-    followers: lastfm.listeners,
-    monthlyListeners: lastfm.listeners > 0 ? formatNumber(lastfm.listeners) : "—",
-    monthlyListenersRaw: lastfm.listeners,
+    // Legacy compat
+    followers: spotifyFollowers,
+    monthlyListenersRaw: monthlyListeners,
     spotifyPopularity: 0,
-    spotifyFollowers: 0,
+    weeklyListeners: monthlyListeners,
+    weeklyListenersFormatted: monthlyListeners > 0 ? formatNumber(monthlyListeners) : "—",
+    totalScrobbles: 0,
+    totalScrobblesFormatted: "—",
   };
 }

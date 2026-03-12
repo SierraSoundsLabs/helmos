@@ -87,9 +87,9 @@ function DashboardView({ artist, analysis }: { artist: ArtistData; analysis: Ana
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Weekly Listeners", value: artist.weeklyListenersFormatted, note: "Last.fm" },
-          { label: "Total Scrobbles", value: artist.totalScrobblesFormatted, note: "Last.fm" },
-          { label: "Top Track", value: artist.topSong?.name ? (artist.topSong.name.length > 14 ? artist.topSong.name.slice(0, 13) + "…" : artist.topSong.name) : "—", note: artist.topSong?.playcount ? `${artist.topSong.playcount} plays` : "Last.fm" },
+          { label: "Monthly Listeners", value: artist.monthlyListenersFormatted, note: artist.statsSource === 'chartmetric' ? "Spotify" : "—" },
+          { label: "Followers", value: artist.spotifyFollowersFormatted, note: artist.statsSource === 'chartmetric' ? "Spotify" : "—" },
+          { label: "Top Track", value: artist.topSong?.name ? (artist.topSong.name.length > 14 ? artist.topSong.name.slice(0, 13) + "…" : artist.topSong.name) : "—", note: artist.topSong?.playcount && artist.topSong.playcount !== "—" ? `${artist.topSong.playcount} plays` : "" },
           { label: "Releases", value: String(artist.allReleases.length || "—"), note: "Spotify" },
         ].map(s => (
           <div key={s.label} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4">
