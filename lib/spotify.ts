@@ -161,10 +161,10 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
 
   // Parallel: top tracks + discography
   const [topTracksRes, albumsRes] = await Promise.all([
-    fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`, { headers })
+    fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=from_token`, { headers })
       .then(r => r.ok ? r.json() : { tracks: [] })
       .catch(() => ({ tracks: [] })),
-    fetch(`https://api.spotify.com/v1/artists/${artistId}/albums?limit=50&include_groups=album,single,ep&market=US`, { headers })
+    fetch(`https://api.spotify.com/v1/artists/${artistId}/albums?limit=50&include_groups=album,single,ep`, { headers })
       .then(r => r.ok ? r.json() : { items: [] })
       .catch(() => ({ items: [] })),
   ]);
