@@ -87,10 +87,10 @@ function DashboardView({ artist, analysis }: { artist: ArtistData; analysis: Ana
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Followers", value: artist.monthlyListeners, note: "Spotify" },
-          { label: "Popularity", value: `${artist.spotifyPopularity}/100`, note: "Spotify score" },
-          { label: "Top Song", value: artist.topSong?.name ? artist.topSong.name.slice(0, 14) + (artist.topSong.name.length > 14 ? "…" : "") : "—", note: artist.topSong ? `${artist.topSong.popularity}/100 popularity` : "" },
-          { label: "Releases", value: String(artist.allReleases.length), note: "on Spotify" },
+          { label: "Weekly Listeners", value: artist.weeklyListenersFormatted, note: "Last.fm" },
+          { label: "Total Scrobbles", value: artist.totalScrobblesFormatted, note: "Last.fm" },
+          { label: "Top Track", value: artist.topSong?.name ? (artist.topSong.name.length > 14 ? artist.topSong.name.slice(0, 13) + "…" : artist.topSong.name) : "—", note: artist.topSong?.playcount ? `${artist.topSong.playcount} plays` : "Last.fm" },
+          { label: "Releases", value: String(artist.allReleases.length || "—"), note: "Spotify" },
         ].map(s => (
           <div key={s.label} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4">
             <p className="text-xs text-zinc-500 mb-1">{s.label}</p>

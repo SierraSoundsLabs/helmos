@@ -65,18 +65,18 @@ AVAILABLE TASK TYPES (pick the 5 most relevant for this specific artist):
 export async function analyzeArtist(artistData: ArtistData): Promise<AnalysisResult> {
   const hasRecentRelease = (artistData.monthsAgoLastRelease ?? 99) <= 3;
   const hasUpcomingOpportunity = (artistData.monthsAgoLastRelease ?? 99) > 4;
-  const listeners = artistData.monthlyListenersRaw;
+  const listeners = (artistData as any).weeklyListeners ?? artistData.monthlyListenersRaw;
+  const scrobbles = (artistData as any).totalScrobbles ?? 0;
 
   const prompt = `You are Helm, an AI Chief of Staff for independent musicians. You run their entire music business while they sleep and write.
 
 Artist:
 - Name: ${artistData.name}
 - Genres: ${artistData.genres.join(", ") || "Independent"}
-- Spotify Followers: ${listeners > 0 ? listeners.toLocaleString() : "unknown"} (from Spotify API)
-- Spotify Popularity Score: ${artistData.spotifyPopularity}/100
-- Spotify Followers: ${artistData.spotifyFollowers.toLocaleString()}
-- Most Popular Track: ${artistData.topSong?.name || "Unknown"} (popularity: ${artistData.topSong?.popularity || 0}/100)
-- Top Tracks: ${artistData.topTracks.map((t) => `${t.name} (${t.popularity})`).join(", ") || "None"}
+- Last.fm Weekly Listeners: ${listeners > 0 ? listeners.toLocaleString() : "unknown"}
+- Last.fm Total Scrobbles: ${scrobbles > 0 ? scrobbles.toLocaleString() : "unknown"}
+- Most Played Track: ${artistData.topSong?.name || "Unknown"} (${(artistData.topSong as any)?.playcount || "0"} plays)
+- Top Tracks: ${artistData.topTracks.map((t) => `${t.name} (${(t as any).playcount || "?"} plays)`).join(", ") || "None"}
 - Total Releases: ${artistData.allReleases.length}
 - Latest Release: ${artistData.latestRelease ? `"${artistData.latestRelease.name}" (${artistData.latestRelease.type}, ${artistData.latestRelease.releaseDate})` : "None"}
 - Months Since Last Release: ${artistData.monthsAgoLastRelease ?? "Unknown"}
