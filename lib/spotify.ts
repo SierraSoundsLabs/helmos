@@ -79,6 +79,34 @@ export function extractArtistId(input: string): string | null {
   return null;
 }
 
+// ─── Spotify Partner API (requires user OAuth token) ─────────────────────────
+
+const PARTNER_HASH = "79a4a9d7c3a3781d801e62b62ef11c7ee56fce2626772eb26cd20c69f84b3f49";
+
+export async function fetchMonthlyListeners(artistId: string, userToken: string): Promise<{ monthlyListeners: number; followers: number } | null> {
+  try {
+    const vars = JSON.stringify({ uri: `spotify:artist:${artistId}`, locale: "", includePrerelease: true });
+    const exts = JSON.stringify({ persistedQuery: { version: 1, sha256Hash: PARTNER_HASH } });
+    const url = `https://api-partner.spotify.com/pathfinder/v1/query?operationName=queryArtistOverview&variables=${encodeURIComponent(vars)}&extensions=${encodeURIComponent(exts)}`;
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const stats = data?.data?.artistUnion?.stats;
+    if (!stats) return null;
+
+    return {
+      monthlyListeners: Number(stats.monthlyListeners) || 0,
+      followers: Number(stats.followers) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Chartmetric auth + stats ─────────────────────────────────────────────────
 
 let cmCache: { token: string; expiresAt: number } | null = null;

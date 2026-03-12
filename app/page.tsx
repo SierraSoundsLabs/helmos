@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { ArtistData } from "@/lib/spotify";
 import type { AnalysisResult } from "@/lib/claude";
 
@@ -319,7 +319,21 @@ export default function Home() {
   const [loadingStep, setLoadingStep] = useState("");
   const [artist, setArtist] = useState<ArtistData | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
+
+  // Check if Spotify is connected + handle callback param
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("spotify") === "connected") {
+      setSpotifyConnected(true);
+      window.history.replaceState({}, "", "/");
+    }
+    // Check cookie by calling a lightweight endpoint
+    fetch("/api/auth/status").then(r => r.json()).then(d => {
+      if (d.connected) setSpotifyConnected(true);
+    }).catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -405,6 +419,29 @@ export default function Home() {
               </div>
             ))}
           </div>
+
+          {/* Spotify connect banner */}
+          {!spotifyConnected ? (
+            <a
+              href="/api/auth/spotify"
+              className="w-full flex items-center justify-between gap-3 bg-[#1db954]/10 border border-[#1db954]/25 hover:border-[#1db954]/50 rounded-xl px-4 py-2.5 transition-all group"
+            >
+              <div className="flex items-center gap-2.5">
+                <SpotifyIcon />
+                <div>
+                  <p className="text-xs font-semibold text-white">Connect Spotify for live stats</p>
+                  <p className="text-[11px] text-zinc-500">Monthly listeners · Followers · Real data</p>
+                </div>
+              </div>
+              <span className="text-xs font-medium text-[#1db954] group-hover:text-white transition-colors shrink-0">Connect →</span>
+            </a>
+          ) : (
+            <div className="w-full flex items-center gap-2 bg-[#1db954]/10 border border-[#1db954]/25 rounded-xl px-4 py-2 text-xs text-[#1db954]">
+              <SpotifyIcon />
+              <span className="font-medium">Spotify connected</span>
+              <span className="text-zinc-500 ml-1">— live stats enabled</span>
+            </div>
+          )}
 
           {/* URL input */}
           <form onSubmit={handleSubmit} className="w-full flex flex-col gap-3">
