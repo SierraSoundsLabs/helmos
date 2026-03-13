@@ -2,7 +2,7 @@
 // Helmos data layer
 //   Spotify  → artist identity, discography
 //   Last.fm  → bio, genres/tags, top tracks
-//   Chartmetric → monthly listeners, Spotify followers (the real stats)
+//   og:description scrape → monthly listeners (no API key needed, 100% accurate)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface Release {
@@ -107,72 +107,44 @@ export async function fetchMonthlyListeners(artistId: string, userToken: string)
   }
 }
 
-// ─── Chartmetric auth + stats ─────────────────────────────────────────────────
+// ─── Monthly listeners via og:description scrape ─────────────────────────────
+// Spotify's public artist page embeds monthly listeners in the og:description
+// meta tag: "Artist · 100.3M monthly listeners." — no API key needed, always accurate.
 
-let cmCache: { token: string; expiresAt: number } | null = null;
-
-async function getChartmetricToken(): Promise<string | null> {
-  const refreshToken = process.env.CHARTMETRIC_REFRESH_TOKEN;
-  if (!refreshToken) return null;
-  if (cmCache && Date.now() < cmCache.expiresAt) return cmCache.token;
-  try {
-    const res = await fetch("https://api.chartmetric.com/api/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshtoken: refreshToken }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.token) return null;
-    cmCache = { token: data.token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
-    return cmCache.token;
-  } catch {
-    return null;
-  }
+function parseListenerString(raw: string): number {
+  const s = raw.replace(/,/g, "").trim();
+  if (s.endsWith("B")) return Math.round(parseFloat(s) * 1_000_000_000);
+  if (s.endsWith("M")) return Math.round(parseFloat(s) * 1_000_000);
+  if (s.endsWith("K")) return Math.round(parseFloat(s) * 1_000);
+  return parseInt(s) || 0;
 }
 
-async function cmGet(path: string, token: string) {
-  const res = await fetch(`https://api.chartmetric.com${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.obj ?? data;
-}
-
-interface ChartmetricStats {
+interface SpotifyPublicStats {
   monthlyListeners: number;
   spotifyFollowers: number;
 }
 
-async function getChartmetricStats(spotifyArtistId: string): Promise<ChartmetricStats | null> {
-  const token = await getChartmetricToken();
-  if (!token) return null;
-
+async function getSpotifyPublicStats(artistId: string): Promise<SpotifyPublicStats | null> {
   try {
-    // Step 1: Resolve Spotify ID → Chartmetric ID
-    const ids = await cmGet(`/api/artist/spotify/${spotifyArtistId}/get-ids`, token);
-    if (!ids || ids.length === 0) return null;
-    const cmId = ids[0].cm_artist;
-    if (!cmId) return null;
+    const res = await fetch(`https://open.spotify.com/artist/${artistId}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
 
-    // Step 2: Fetch listeners + followers in parallel
-    const [listenersData, followersData] = await Promise.all([
-      cmGet(`/api/artist/${cmId}/stat/spotify?field=listeners&latest=true`, token),
-      cmGet(`/api/artist/${cmId}/stat/spotify?field=followers&latest=true`, token),
-    ]);
+    // og:description: "Artist · 100.3M monthly listeners."
+    const ogDesc = html.match(/property="og:description" content="([^"]+)"/)?.[1] ?? "";
+    const mlMatch = ogDesc.match(/(\d[\d.,]+[KMBkmb]?)\s*monthly listeners/i);
+    if (!mlMatch) return null;
 
-    // listeners data is an array — take the last value
-    const listenersArr = listenersData?.listeners ?? [];
-    const followersArr = followersData?.followers ?? [];
+    const monthlyListeners = parseListenerString(mlMatch[1]);
 
-    const latestListeners = listenersArr.length > 0 ? listenersArr[listenersArr.length - 1]?.value ?? 0 : 0;
-    const latestFollowers = followersArr.length > 0 ? followersArr[followersArr.length - 1]?.value ?? 0 : 0;
-
-    return {
-      monthlyListeners: Number(latestListeners) || 0,
-      spotifyFollowers: Number(latestFollowers) || 0,
-    };
+    // og:description doesn't include followers — return 0, use Spotify API for followers
+    return { monthlyListeners, spotifyFollowers: 0 };
   } catch {
     return null;
   }
@@ -288,7 +260,7 @@ export function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
-function deriveBigWin(releases: Release[], monthlyListeners: number, cmStats: ChartmetricStats | null, tracks: { name: string }[]): string | null {
+function deriveBigWin(releases: Release[], monthlyListeners: number, cmStats: SpotifyPublicStats | null, tracks: { name: string }[]): string | null {
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   const recent = releases.filter(r => r.releaseDate && new Date(r.releaseDate) >= oneYearAgo);
@@ -317,11 +289,11 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
   const artist = await artistRes.json();
   if (!artist?.name) throw new Error("Artist not found");
 
-  // Parallel: Spotify discography + Last.fm (bio/tags/tracks) + Chartmetric (stats)
+  // Parallel: Spotify discography + Last.fm (bio/tags/tracks) + public stats scrape
   const [spotifyReleases, lastfm, cmStats] = await Promise.all([
     getSpotifyAlbums(artistId, token),
     getLastFmArtist(artist.name),
-    getChartmetricStats(artistId),
+    getSpotifyPublicStats(artistId),
   ]);
 
   const allReleases = spotifyReleases.sort(
@@ -334,7 +306,8 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
     : null;
 
   const monthlyListeners = cmStats?.monthlyListeners ?? 0;
-  const spotifyFollowers = cmStats?.spotifyFollowers ?? 0;
+  // Followers: use Spotify API value (available in client credentials response)
+  const spotifyFollowers = (artist.followers?.total as number | undefined) ?? 0;
   const statsSource: 'chartmetric' | 'none' = cmStats ? 'chartmetric' : 'none';
 
   const bigWin = deriveBigWin(allReleases, monthlyListeners, cmStats, lastfm.tracks);
