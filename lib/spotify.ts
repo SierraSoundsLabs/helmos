@@ -229,25 +229,37 @@ async function getLastFmArtist(name: string) {
 // ─── Spotify discography ──────────────────────────────────────────────────────
 
 async function getSpotifyAlbums(artistId: string, token: string): Promise<Release[]> {
-  try {
-    const res = await fetch(
-      `https://api.spotify.com/v1/artists/${artistId}/albums?limit=50&include_groups=album,single,ep`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (res.status === 429) {
-      await new Promise(r => setTimeout(r, Math.min(parseInt(res.headers.get("retry-after") || "2") * 1000, 5000)));
-      const res2 = await fetch(
-        `https://api.spotify.com/v1/artists/${artistId}/albums?limit=50&include_groups=album,single,ep`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!res2.ok) return [];
-      const d = await res2.json();
-      return mapReleases(d.items || []);
+  // Spotify Dev Mode caps limit at 20 — paginate to collect all releases
+  const allItems: Release[] = [];
+  let offset = 0;
+  const limit = 20;
+  const maxPages = 5; // cap at 100 releases
+
+  for (let page = 0; page < maxPages; page++) {
+    try {
+      const url = `https://api.spotify.com/v1/artists/${artistId}/albums?limit=${limit}&offset=${offset}&include_groups=album,single,ep`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+
+      if (res.status === 429) {
+        const retryAfter = parseInt(res.headers.get("retry-after") || "2") * 1000;
+        await new Promise(r => setTimeout(r, Math.min(retryAfter, 5000)));
+        break; // skip remaining pages on rate limit
+      }
+      if (!res.ok) break;
+
+      const d = await res.json();
+      const items = d.items || [];
+      allItems.push(...mapReleases(items));
+
+      // Stop if this was the last page
+      if (!d.next || items.length < limit) break;
+      offset += limit;
+    } catch {
+      break;
     }
-    if (!res.ok) return [];
-    const d = await res.json();
-    return mapReleases(d.items || []);
-  } catch { return []; }
+  }
+
+  return allItems;
 }
 
 function mapReleases(items: any[]): Release[] {
