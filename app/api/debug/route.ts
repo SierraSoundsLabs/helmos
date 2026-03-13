@@ -11,36 +11,24 @@ export async function GET(req: NextRequest) {
     headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${creds}` },
     body: "grant_type=client_credentials",
   });
-  const tokenData = await tokenRes.json();
-  const token = tokenData.access_token;
+  const { access_token: token } = await tokenRes.json();
 
-  // Trace EXACT same path as getSpotifyAlbums
-  const albumsUrl = `https://api.spotify.com/v1/artists/${id}/albums?limit=50&include_groups=album,single,ep`;
-  const res = await fetch(albumsUrl, { headers: { Authorization: `Bearer ${token}` } });
-  const status = res.status;
-  const ok = res.ok;
-  
-  let items: unknown[] = [];
-  let parseError = "";
-  try {
-    const d = await res.json();
-    items = d.items || [];
-  } catch(e) { parseError = String(e); }
+  // Try different URL encodings
+  const url1 = `https://api.spotify.com/v1/artists/${id}/albums?limit=50&include_groups=album,single,ep`;
+  const url2 = `https://api.spotify.com/v1/artists/${id}/albums?limit=50&include_groups=album%2Csingle%2Cep`;
+  const url3 = `https://api.spotify.com/v1/artists/${id}/albums?limit=10`;
 
-  // Also test mapReleases logic
-  const mapped = items.map((a: any) => ({
-    id: a.id,
-    name: a.name,
-    type: a.album_type,
-    releaseDate: a.release_date,
-    totalTracks: a.total_tracks,
-    albumArt: a.images?.[0]?.url || "",
-    spotifyUrl: a.external_urls?.spotify || "",
-  }));
+  const [r1, r2, r3] = await Promise.all([
+    fetch(url1, { headers: { Authorization: `Bearer ${token}` } }),
+    fetch(url2, { headers: { Authorization: `Bearer ${token}` } }),
+    fetch(url3, { headers: { Authorization: `Bearer ${token}` } }),
+  ]);
+
+  const [b1, b2, b3] = await Promise.all([r1.text(), r2.text(), r3.text()]);
 
   return NextResponse.json({
-    status, ok, itemsCount: items.length, mappedCount: mapped.length,
-    parseError,
-    first: mapped[0] || null,
+    url1: { status: r1.status, body: b1.slice(0, 200) },
+    url2: { status: r2.status, body: b2.slice(0, 200) },
+    url3: { status: r3.status, body: b3.slice(0, 200) },
   });
 }
