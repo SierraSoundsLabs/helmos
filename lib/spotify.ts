@@ -232,8 +232,8 @@ async function getSpotifyAlbums(artistId: string, token: string): Promise<Releas
   // Spotify Dev Mode caps limit at 20 — paginate to collect all releases
   const allItems: Release[] = [];
   let offset = 0;
-  const limit = 20;
-  const maxPages = 5; // cap at 100 releases
+  const limit = 10; // Spotify Dev Mode caps at 10 per request
+  const maxPages = 10; // cap at 100 releases
 
   for (let page = 0; page < maxPages; page++) {
     try {
