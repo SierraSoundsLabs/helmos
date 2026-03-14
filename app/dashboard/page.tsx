@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { ArtistData } from "@/lib/spotify";
 import type { AnalysisResult } from "@/lib/claude";
+import QueueDashboard from "@/components/QueueDashboard";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const STRIPE_PRICE = "price_1T9CqJACiFFf49dvYHMObuOd";
@@ -590,6 +591,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const artistId = searchParams.get("artist");
+  const mode = searchParams.get("mode"); // "queue" = agent queue view
 
   const [artistData, setArtistData] = useState<ArtistData | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -915,7 +917,26 @@ function DashboardContent() {
 
       {/* Tab content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {activeTab === "overview" && (
+        {mode === "queue" && artistData && (
+          <div className="max-w-2xl mx-auto">
+            <QueueDashboard
+              artistId={artistData.id}
+              artistName={artistData.name}
+              artistImage={artistData.image}
+              isPaid={isPaid}
+              onUpgrade={handleSubscribe}
+            />
+            <div className="mt-6 pt-6 border-t border-[#1a1a1a]">
+              <button
+                onClick={() => { const url = new URL(window.location.href); url.searchParams.delete("mode"); router.push(url.pathname + url.search); }}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                ← Back to full analysis
+              </button>
+            </div>
+          </div>
+        )}
+        {mode !== "queue" && activeTab === "overview" && (
           <OverviewTab
             artistData={artistData}
             analysis={analysis}
@@ -927,7 +948,7 @@ function DashboardContent() {
             isChatStreaming={isChatStreaming}
           />
         )}
-        {activeTab === "works" && (
+        {mode !== "queue" && activeTab === "works" && (
           <WorksTab
             artist={artistData}
             isPaid={isPaid}
@@ -935,7 +956,7 @@ function DashboardContent() {
             onSendChat={(msg) => { handleSendChat(msg); setActiveTab("overview"); }}
           />
         )}
-        {activeTab === "release" && (
+        {mode !== "queue" && activeTab === "release" && (
           <ReleaseMarketingTab
             artist={artistData}
             isPaid={isPaid}

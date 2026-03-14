@@ -25,8 +25,8 @@ function SuccessContent() {
           setStatus("done");
           setTimeout(() => {
             const dest = data.artistId
-              ? `/dashboard?artist=${data.artistId}`
-              : "/";
+              ? `/intake?artist=${data.artistId}`
+              : "/intake";
             router.push(dest);
           }, 1800);
         } else {
@@ -65,7 +65,7 @@ function SuccessContent() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white mb-2">Helm is activated ⚡</h1>
-              <p className="text-zinc-400 text-sm">Redirecting to your dashboard…</p>
+              <p className="text-zinc-400 text-sm">Setting up your agent team…</p>
             </div>
           </>
         )}
