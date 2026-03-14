@@ -144,7 +144,7 @@ function HelmChat({
               {[
                 `Build a release plan for my next drop`,
                 `Create a one-sheet for ${artistData.name}`,
-                `Which playlists should I pitch to?`,
+                `Find journalists to pitch my latest single to`,
                 `How do I grow my fanbase this month?`,
               ].map(s => (
                 <button key={s} onClick={() => onSend(s)}
@@ -533,6 +533,7 @@ function ReleaseMarketingTab({
 }) {
   const items = [
     { icon: "🔗", title: "Pre-Save Campaign",       desc: "Create a pre-save link and run fan engagement before release day",                                                          msg: "Help me set up a pre-save campaign for my next release. What platform should I use, how do I set it up, and how do I promote it to maximize pre-saves?" },
+    { icon: "📰", title: "Pitch Journalists",         desc: "Find real music journalists covering your genre and pitch your latest single or album",                                      msg: `Find 15 music journalists and editors who actively cover ${(artist.genres||[])[0]||"indie"} artists like ${artist.name}. For each journalist include: their name, publication, recent article they wrote, their email or contact method, and why ${artist.name}'s latest release is a fit for them. Then write a personalized pitch template I can use for each.` },
     { icon: "📣", title: "Press & Playlist Outreach",desc: "Pitch 10 journalists and 50 playlist curators in your genre 4 weeks out",                                                      msg: `Build a press and playlist outreach plan for ${artist.name}. I need: 10 journalist targets, 50 playlist curator targets in the ${(artist.genres||[])[0]||"my"} genre, and a pitch template for each.` },
     { icon: "📄", title: "Press Release",            desc: "Draft and distribute a press release to genre-specific music blogs",                                                          msg: `Write a press release for ${artist.name}'s most recent release and tell me how to distribute it to the right music blogs.` },
     { icon: "📱", title: "Social Content Plan",      desc: "30-day content calendar built around your release date and story",                                                            msg: `Build a 30-day social content calendar for ${artist.name} around a release campaign. Include post ideas, formats (Reels/TikTok/Story), and optimal posting times.` },

@@ -432,13 +432,13 @@ export default function Home() {
                   <LoadingSpinner />
                   {loadingStep}
                 </span>
-              ) : "See Your Helm Report →"}
+              ) : "Open Your Artist Dashboard →"}
             </button>
           </form>
 
           {/* Social proof */}
           <p className="text-xs text-zinc-600">
-            Free career report · No account required · $49/mo to activate
+            Free · No account required · $49/mo to unlock your AI business agent
           </p>
         </div>
       </div>

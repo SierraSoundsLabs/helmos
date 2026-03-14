@@ -150,51 +150,32 @@ async function getSpotifyPublicStats(artistId: string): Promise<SpotifyPublicSta
   }
 }
 
-// ─── Last.fm (bio, tags, top tracks only) ────────────────────────────────────
+// ─── Spotify top tracks (replaces Last.fm) ───────────────────────────────────
 
-const LASTFM_KEY = process.env.LASTFM_API_KEY || "b25b959554ed76058ac220b7b2e0a026";
-
-async function lastfmGet(params: Record<string, string>) {
-  const q = new URLSearchParams({ ...params, api_key: LASTFM_KEY, format: "json" });
-  const res = await fetch(`https://ws.audioscrobbler.com/2.0/?${q}`);
-  if (!res.ok) return null;
-  return res.json();
-}
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").replace(/\. Read more.*$/i, "").trim();
-}
-
-async function getLastFmArtist(name: string) {
+async function getSpotifyTopTracks(artistId: string, token: string) {
   try {
-    const [info, topTracks] = await Promise.all([
-      lastfmGet({ method: "artist.getinfo", artist: name }),
-      lastfmGet({ method: "artist.gettoptracks", artist: name, limit: "5" }),
-    ]);
-
-    const artist = info?.artist;
-    const rawBio = artist?.bio?.summary || artist?.bio?.content || "";
-    const bio = stripHtml(rawBio).slice(0, 600);
-    const tags = (artist?.tags?.tag || []).slice(0, 5).map((t: { name: string }) => t.name);
-
-    const tracks = (topTracks?.toptracks?.track || []).slice(0, 5).map((t: {
-      name: string; playcount: string;
-      image?: { "#text": string }[];
-      url?: string;
+    const res = await fetch(
+      `https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return { tracks: [] };
+    const data = await res.json();
+    const tracks = (data.tracks || []).slice(0, 5).map((t: {
+      id: string; name: string;
+      album: { images: { url: string }[] };
+      external_urls: { spotify: string };
+      preview_url: string | null;
     }) => ({
-      id: t.name,
+      id: t.id,
       name: t.name,
-      playcount: parseInt(t.playcount || "0") > 0
-        ? parseInt(t.playcount).toLocaleString()
-        : "—",
-      albumArt: t.image?.[2]?.["#text"] || "",
-      previewUrl: null,
-      spotifyUrl: t.url || "",
+      playcount: "—",
+      albumArt: t.album?.images?.[0]?.url || "",
+      previewUrl: t.preview_url || null,
+      spotifyUrl: t.external_urls?.spotify || "",
     }));
-
-    return { bio, tags, tracks };
+    return { tracks };
   } catch {
-    return { bio: "", tags: [], tracks: [] };
+    return { tracks: [] };
   }
 }
 
@@ -289,10 +270,10 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
   const artist = await artistRes.json();
   if (!artist?.name) throw new Error("Artist not found");
 
-  // Parallel: Spotify discography + Last.fm (bio/tags/tracks) + public stats scrape
-  const [spotifyReleases, lastfm, cmStats] = await Promise.all([
+  // Parallel: Spotify discography + top tracks + public stats scrape
+  const [spotifyReleases, spotifyTracks, cmStats] = await Promise.all([
     getSpotifyAlbums(artistId, token),
-    getLastFmArtist(artist.name),
+    getSpotifyTopTracks(artistId, token),
     getSpotifyPublicStats(artistId),
   ]);
 
@@ -300,9 +281,12 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
     (a, b) => new Date(b.releaseDate || "").getTime() - new Date(a.releaseDate || "").getTime()
   );
   const latestRelease = allReleases[0] || null;
-  const genres = lastfm.tags.length > 0 ? lastfm.tags : ["Independent"];
-  const topSong = lastfm.tracks[0]
-    ? { name: lastfm.tracks[0].name, playcount: lastfm.tracks[0].playcount, albumArt: lastfm.tracks[0].albumArt, spotifyUrl: lastfm.tracks[0].spotifyUrl }
+  // Use Spotify's own genres; fall back to "Independent" if empty
+  const genres = (artist.genres as string[] | undefined)?.length
+    ? (artist.genres as string[]).slice(0, 5)
+    : ["Independent"];
+  const topSong = spotifyTracks.tracks[0]
+    ? { name: spotifyTracks.tracks[0].name, playcount: "—", albumArt: spotifyTracks.tracks[0].albumArt, spotifyUrl: spotifyTracks.tracks[0].spotifyUrl }
     : null;
 
   const monthlyListeners = cmStats?.monthlyListeners ?? 0;
@@ -310,13 +294,13 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
   const spotifyFollowers = (artist.followers?.total as number | undefined) ?? 0;
   const statsSource: 'chartmetric' | 'none' = cmStats ? 'chartmetric' : 'none';
 
-  const bigWin = deriveBigWin(allReleases, monthlyListeners, cmStats, lastfm.tracks);
+  const bigWin = deriveBigWin(allReleases, monthlyListeners, cmStats, spotifyTracks.tracks);
 
   return {
     id: artistId,
     name: artist.name,
     image: artist.images?.[0]?.url || "",
-    bio: lastfm.bio,
+    bio: "",
     genres,
     spotifyUrl: artist.external_urls?.spotify || `https://open.spotify.com/artist/${artistId}`,
     monthlyListeners,
@@ -325,7 +309,7 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
     spotifyFollowersFormatted: spotifyFollowers > 0 ? formatNumber(spotifyFollowers) : "—",
     statsSource,
     topSong,
-    topTracks: lastfm.tracks,
+    topTracks: spotifyTracks.tracks,
     latestRelease,
     monthsAgoLastRelease: latestRelease ? monthsAgo(latestRelease.releaseDate) : null,
     allReleases,
