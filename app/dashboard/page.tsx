@@ -232,26 +232,6 @@ function OverviewTab({
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
       {/* Main content */}
       <div className="flex flex-col gap-6">
-        {/* Career Stage */}
-        <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Career Stage</p>
-              <p className={`text-2xl font-bold ${stageConf.color}`}>{stage}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] text-zinc-500 mb-1">Momentum</p>
-              <Sparkline popularity={artistData.spotifyPopularity} />
-            </div>
-          </div>
-          <div className="h-1.5 bg-[#1e1e1e] rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${stageConf.pct}%`, background: stageConf.bar }} />
-          </div>
-          <div className="flex justify-between text-[10px] text-zinc-600 mt-1.5">
-            <span>Emerging</span><span>Growing</span><span>Established</span><span>Breakthrough</span>
-          </div>
-        </div>
-
         {/* Tasks */}
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -290,6 +270,26 @@ function OverviewTab({
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Career Stage */}
+        <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Career Stage</p>
+              <p className={`text-2xl font-bold ${stageConf.color}`}>{stage}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] text-zinc-500 mb-1">Momentum</p>
+              <Sparkline popularity={artistData.spotifyPopularity} />
+            </div>
+          </div>
+          <div className="h-1.5 bg-[#1e1e1e] rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${stageConf.pct}%`, background: stageConf.bar }} />
+          </div>
+          <div className="flex justify-between text-[10px] text-zinc-600 mt-1.5">
+            <span>Emerging</span><span>Growing</span><span>Established</span><span>Breakthrough</span>
           </div>
         </div>
 
@@ -381,7 +381,7 @@ function OverviewTab({
         ) : (
           // Pre-paid preview panel
           <div className="bg-[#111] border border-[#1e1e1e] rounded-xl flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-[#1e1e1e]">
+            <div className="flex items-center justify-between p-3 border-b border-[#1e1e1e]">
               <div className="flex items-center gap-2">
                 <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center">
                   <span className="text-[10px] font-bold text-white">H</span>
@@ -390,10 +390,10 @@ function OverviewTab({
               </div>
               <span className="text-[10px] font-bold text-zinc-500 bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded-full">LOCKED</span>
             </div>
-            <div className="p-4 flex flex-col gap-5">
+            <div className="p-3 flex flex-col gap-3">
               <div>
-                <p className="text-[11px] text-zinc-500 mb-2.5">I&apos;ve analyzed {artistData.name}:</p>
-                <div className="flex flex-col gap-2">
+                <p className="text-[11px] text-zinc-500 mb-2">I&apos;ve analyzed {artistData.name}:</p>
+                <div className="flex flex-col gap-1.5">
                   {analysis.completedItems.map((item, i) => (
                     <div key={i} className="flex gap-2 text-xs text-zinc-300">
                       <span className="text-emerald-400 shrink-0 mt-0.5">✓</span>
@@ -403,8 +403,8 @@ function OverviewTab({
                 </div>
               </div>
               <div>
-                <p className="text-[11px] text-zinc-500 mb-2.5">Here&apos;s what I&apos;ll execute:</p>
-                <div className="flex flex-col gap-2">
+                <p className="text-[11px] text-zinc-500 mb-2">Here&apos;s what I&apos;ll execute:</p>
+                <div className="flex flex-col gap-1.5">
                   {analysis.tasks.map((task, i) => (
                     <div key={i} className="flex gap-2 text-xs">
                       <span className="text-zinc-600 shrink-0 font-mono mt-0.5">{i+1}.</span>
@@ -413,32 +413,17 @@ function OverviewTab({
                   ))}
                 </div>
               </div>
-              <div className="bg-[#0d0d0d] rounded-xl p-3.5 border border-[#1e1e1e]">
-                <p className="text-xs text-zinc-400 leading-relaxed">{analysis.narrative}</p>
+              <div className="bg-[#0d0d0d] rounded-xl p-3 border border-[#1e1e1e]">
+                <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2 overflow-hidden">{analysis.narrative}</p>
               </div>
               <button
                 onClick={onSubscribe}
                 className="w-full text-center px-4 py-3 rounded-xl text-sm font-semibold text-white hover:scale-[1.02] transition-transform"
                 style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
               >
-                Start 7-Day Free Trial →
+                Start 3-Day Free Trial →
               </button>
-              <p className="text-[10px] text-zinc-600 text-center -mt-3">$49/mo after trial · Cancel anytime</p>
-            </div>
-            {/* Locked chat */}
-            <div className="border-t border-[#1e1e1e] p-3">
-              <p className="text-[10px] text-zinc-600 mb-2">Ask Helm anything</p>
-              <div className="flex items-center gap-2 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg px-3 py-2 opacity-50 cursor-not-allowed">
-                <input
-                  type="text"
-                  readOnly
-                  placeholder={`How do I grow ${artistData.name}'s fanbase?`}
-                  className="flex-1 bg-transparent text-xs text-white placeholder-zinc-600 outline-none cursor-not-allowed"
-                  onClick={onSubscribe}
-                />
-                <span className="text-zinc-600 font-bold">↑</span>
-              </div>
-              <p className="text-[10px] text-zinc-700 mt-1.5 text-center">Start trial to unlock Helm chat</p>
+              <p className="text-[10px] text-zinc-600 text-center -mt-1">$49/mo after trial · Cancel anytime</p>
             </div>
           </div>
         )}
