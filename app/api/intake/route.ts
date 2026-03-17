@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { fetchArtistData } from "@/lib/spotify";
-import { buildTaskList, createTasks, saveUserProfile, type UserProfile } from "@/lib/tasks";
+import { buildTaskList, createTasks, saveUserProfile, updateTask, getUserTasks, queueNextTask, type UserProfile } from "@/lib/tasks";
 
 export async function POST(req: NextRequest) {
   const session = getSession(req);
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     // Continue even if Spotify fetch fails — use defaults
   }
 
-  const userId = session.artistId ?? artistId; // use artistId as user identifier for now
+  const userId = session.artistId ?? artistId;
 
   const profile: UserProfile = {
     userId,
@@ -53,6 +53,14 @@ export async function POST(req: NextRequest) {
 
   const taskTypes = buildTaskList(goals, hasRelease);
   const tasks = await createTasks(profile, taskTypes);
+
+  // Fire first agent task immediately (don't wait for cron)
+  // Run in background — don't block the response
+  const baseUrl = req.nextUrl.origin;
+  fetch(`${baseUrl}/api/agent/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  }).catch(() => {}); // fire and forget
 
   return NextResponse.json({ ok: true, taskCount: tasks.length });
 }
