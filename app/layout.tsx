@@ -8,13 +8,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Helmos — AI Chief of Staff for Music",
+  title: "Helm — AI Artist Manager",
   description:
     "Get a personalized career analysis and AI-powered action plan for your music career. Powered by Spotify data and Claude.",
   openGraph: {
-    title: "Helmos — AI Chief of Staff for Music",
+    title: "Helm — AI Artist Manager",
     description: "Paste your Spotify link. Get a personalized action plan.",
-    siteName: "Helmos",
+    siteName: "Helm",
   },
 };
 
