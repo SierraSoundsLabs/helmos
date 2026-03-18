@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { encodeSession, COOKIE_NAME, TTL } from "@/lib/session";
-import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
+const STRIPE_KEY = process.env.STRIPE_SECRET_KEY!;
+
+async function stripeGet(path: string) {
+  const res = await fetch(`https://api.stripe.com/v1${path}`, {
+    headers: { Authorization: `Bearer ${STRIPE_KEY}` },
+  });
+  return res.json();
+}
 
 export async function POST(req: NextRequest) {
   const { email } = await req.json();
@@ -11,38 +17,21 @@ export async function POST(req: NextRequest) {
 
   try {
     // Find customer by email
-    const customers = await stripe.customers.list({ email, limit: 5 });
-    if (!customers.data.length) {
+    const customers = await stripeGet(`/customers?email=${encodeURIComponent(email)}&limit=5`);
+    if (!customers.data?.length) {
       return NextResponse.json({ error: "No subscription found for that email." }, { status: 404 });
     }
 
-    // Check for active subscription
     let customerId = "";
     let artistId = "";
 
     for (const customer of customers.data) {
-      const subs = await stripe.subscriptions.list({
-        customer: customer.id,
-        status: "active",
-        limit: 1,
-      });
-      if (subs.data.length) {
-        customerId = customer.id;
-        // Try to find artist_id from most recent completed checkout session
-        const sessions = await stripe.checkout.sessions.list({
-          customer: customer.id,
-          limit: 5,
-        });
-        const paidSession = sessions.data.find(s => s.payment_status === "paid" || s.status === "complete");
-        artistId = paidSession?.metadata?.artist_id ?? "";
-        break;
-      }
-      // Also check one-time payments (no subscription model)
-      const sessions = await stripe.checkout.sessions.list({
-        customer: customer.id,
-        limit: 5,
-      });
-      const paidSession = sessions.data.find(s => s.payment_status === "paid" || s.status === "complete");
+      // Check completed checkout sessions for this customer
+      const sessions = await stripeGet(`/checkout/sessions?customer=${customer.id}&limit=10`);
+      const paidSession = sessions.data?.find(
+        (s: { payment_status: string; status: string; metadata?: { artist_id?: string } }) =>
+          s.payment_status === "paid" || s.status === "complete"
+      );
       if (paidSession) {
         customerId = customer.id;
         artistId = paidSession.metadata?.artist_id ?? "";
@@ -51,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!customerId) {
-      return NextResponse.json({ error: "No active subscription found for that email." }, { status: 404 });
+      return NextResponse.json({ error: "No paid subscription found for that email." }, { status: 404 });
     }
 
     // Re-issue session cookie
