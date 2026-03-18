@@ -1,6 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ArtistData } from "./spotify";
 
+export interface ActionItem {
+  title: string;
+  description: string;
+  icon: string;
+  urgency: "high" | "low";
+}
+
 export interface AgentTask {
   title: string;
   bullets: string[];

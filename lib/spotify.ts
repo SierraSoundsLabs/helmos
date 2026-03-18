@@ -29,8 +29,8 @@ export interface ArtistData {
   spotifyFollowersFormatted: string;
   statsSource: 'chartmetric' | 'none';
   // Top tracks (Last.fm)
-  topSong: { name: string; playcount: string; albumArt: string; spotifyUrl: string } | null;
-  topTracks: { id: string; name: string; playcount: string; albumArt: string; previewUrl: string | null; spotifyUrl: string }[];
+  topSong: { name: string; playcount: string; albumArt: string; spotifyUrl: string; streamEstimate?: string } | null;
+  topTracks: { id: string; name: string; playcount: string; albumArt: string; previewUrl: string | null; spotifyUrl: string; streamEstimate?: string; popularity?: number }[];
   // Discography (Spotify)
   latestRelease: { name: string; albumArt: string; releaseDate: string; totalTracks: number; type: string; spotifyUrl: string } | null;
   monthsAgoLastRelease: number | null;

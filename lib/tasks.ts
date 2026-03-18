@@ -51,7 +51,7 @@ export interface UserProfile {
 
 // ─── TASK DEFINITIONS ─────────────────────────────────────────────────────────
 
-export const TASK_DEFS: Record<TaskType, Omit<Task, "id" | "userId" | "artistId" | "status" | "priority" | "input" | "output" | "outputJson" | "createdAt" | "startedAt" | "completedAt" | "error">> = {
+export const TASK_DEFS: Record<TaskType, Omit<Task, "id" | "userId" | "artistId" | "type" | "status" | "priority" | "input" | "output" | "outputJson" | "createdAt" | "startedAt" | "completedAt" | "error">> = {
   artist_analysis: {
     title: "Analyzing your career",
     description: "Deep dive into your Spotify data, release history, and growth trajectory",
