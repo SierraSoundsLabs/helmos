@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { ArtistData } from "@/lib/spotify";
+import type { Release } from "@/lib/spotify";
 import type { AnalysisResult } from "@/lib/claude";
 import QueueDashboard from "@/components/QueueDashboard";
 
@@ -87,6 +88,595 @@ function DocModal({ content, title, onClose }: { content: string; title: string;
         </div>
         <div className="overflow-y-auto p-5">
           <pre className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">{content}</pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SPEND SELECTOR ───────────────────────────────────────────────────────────
+function SpendSelector({ onChange }: { onChange: (daily: number, days: number, total: number) => void }) {
+  const [daily, setDaily] = useState(10);
+  const [days, setDays] = useState(7);
+  const [customDaily, setCustomDaily] = useState("");
+  const [useCustom, setUseCustom] = useState(false);
+
+  const dailyOptions = [10, 25, 50, 100];
+  const durationOptions = [7, 14, 30];
+
+  const effectiveDaily = useCustom ? (parseInt(customDaily) || 0) : daily;
+  const total = effectiveDaily * days;
+
+  useEffect(() => {
+    onChange(effectiveDaily, days, total);
+  }, [effectiveDaily, days, total, onChange]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-xs text-zinc-400 mb-2">Daily spend</p>
+        <div className="flex gap-2 flex-wrap">
+          {dailyOptions.map(opt => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => { setDaily(opt); setUseCustom(false); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                !useCustom && daily === opt
+                  ? "bg-[#6366f1]/20 text-[#a5b4fc] border-[#6366f1]/50"
+                  : "bg-[#1a1a1a] text-zinc-400 border-[#2e2e2e] hover:border-[#3e3e3e]"
+              }`}
+            >
+              ${opt}/day
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setUseCustom(true)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              useCustom
+                ? "bg-[#6366f1]/20 text-[#a5b4fc] border-[#6366f1]/50"
+                : "bg-[#1a1a1a] text-zinc-400 border-[#2e2e2e] hover:border-[#3e3e3e]"
+            }`}
+          >
+            Custom
+          </button>
+        </div>
+        {useCustom && (
+          <input
+            type="number"
+            min={10}
+            value={customDaily}
+            onChange={e => setCustomDaily(e.target.value)}
+            placeholder="Enter daily amount ($)"
+            className="mt-2 w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50"
+          />
+        )}
+      </div>
+
+      <div>
+        <p className="text-xs text-zinc-400 mb-2">Duration</p>
+        <div className="flex gap-2">
+          {durationOptions.map(opt => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => setDays(opt)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                days === opt
+                  ? "bg-[#6366f1]/20 text-[#a5b4fc] border-[#6366f1]/50"
+                  : "bg-[#1a1a1a] text-zinc-400 border-[#2e2e2e] hover:border-[#3e3e3e]"
+              }`}
+            >
+              {opt} days
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {total > 0 && (
+        <div className="bg-[#0d1a0d] border border-emerald-500/30 rounded-lg px-4 py-2.5">
+          <p className="text-xs text-zinc-400">Total campaign spend</p>
+          <p className="text-xl font-bold text-emerald-400">${total.toLocaleString()}</p>
+          <p className="text-[10px] text-zinc-500">${effectiveDaily}/day × {days} days</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PAID MEDIA MODAL ─────────────────────────────────────────────────────────
+type CampaignType = "show" | "release" | "general";
+
+function PaidMediaModal({
+  artistData,
+  onClose,
+}: {
+  artistData: ArtistData;
+  onClose: () => void;
+}) {
+  const [campaignType, setCampaignType] = useState<CampaignType | null>(null);
+  const [hasCreative, setHasCreative] = useState<boolean | null>(null);
+  const [step, setStep] = useState<"choose" | "show" | "release-choice" | "release-upload" | "release-assets" | "release-preview" | "general">("choose");
+
+  // Show form state
+  const [showFlyerFile, setShowFlyerFile] = useState<File | null>(null);
+  const [showFlyerPreview, setShowFlyerPreview] = useState<string | null>(null);
+  const [showName, setShowName] = useState("");
+  const [showDate, setShowDate] = useState("");
+  const [showVenue, setShowVenue] = useState("");
+  const [showNotes, setShowNotes] = useState("");
+
+  // Release form state
+  const [releaseCreativeFile, setReleaseCreativeFile] = useState<File | null>(null);
+  const [releaseId, setReleaseId] = useState("");
+  const [releaseNotes, setReleaseNotes] = useState("");
+
+  // Asset creation state
+  const [artworkFile, setArtworkFile] = useState<File | null>(null);
+  const [artworkUrl, setArtworkUrl] = useState("");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [assetReleaseId, setAssetReleaseId] = useState("");
+
+  // Preview state
+  const [previewData, setPreviewData] = useState<{ artworkUrl: string; message: string } | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [spendConfig, setSpendConfig] = useState({ daily: 10, days: 7, total: 70 });
+
+  // General form state
+  const [generalGoals, setGeneralGoals] = useState("");
+  const [generalSpend, setGeneralSpend] = useState({ daily: 10, days: 7, total: 70 });
+
+  // Submission state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const releases = artistData.allReleases || [];
+
+  function handleFlyerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setShowFlyerFile(file);
+    const reader = new FileReader();
+    reader.onload = ev => setShowFlyerPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  async function submitShowInquiry() {
+    if (!showFlyerFile || !showName || !showDate || !showVenue) return;
+    setIsSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append("flyer", showFlyerFile);
+      fd.append("showName", showName);
+      fd.append("date", showDate);
+      fd.append("venue", showVenue);
+      fd.append("notes", showNotes);
+      fd.append("artistName", artistData.name);
+      const res = await fetch("/api/helm/media/show-inquiry", { method: "POST", body: fd });
+      if (res.ok) {
+        setSuccessMessage("Your flyer has been sent to the Good Morning Music team. They'll be in touch within 24 hours.");
+        setSubmitted(true);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function submitReleaseInquiry() {
+    if (!releaseCreativeFile || !releaseId) return;
+    setIsSubmitting(true);
+    try {
+      const release = releases.find(r => r.id === releaseId);
+      const fd = new FormData();
+      fd.append("creative", releaseCreativeFile);
+      fd.append("releaseId", releaseId);
+      fd.append("releaseName", release?.name || "");
+      fd.append("notes", releaseNotes);
+      fd.append("artistName", artistData.name);
+      const res = await fetch("/api/helm/media/release-inquiry", { method: "POST", body: fd });
+      if (res.ok) {
+        setSuccessMessage("Your ad creative has been sent to the Good Morning Music team. They'll be in touch within 24 hours.");
+        setSubmitted(true);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function generatePreview() {
+    if (!assetReleaseId) return;
+    setIsPreviewLoading(true);
+    try {
+      const fd = new FormData();
+      if (artworkFile) fd.append("artwork", artworkFile);
+      if (audioFile) fd.append("audio", audioFile);
+      fd.append("releaseId", assetReleaseId);
+      fd.append("artworkUrl", artworkUrl);
+      const res = await fetch("/api/helm/media/preview", { method: "POST", body: fd });
+      if (res.ok) {
+        const data = await res.json();
+        setPreviewData(data);
+        setStep("release-preview");
+      }
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }
+
+  async function launchCampaign() {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/helm/media/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artistId: artistData.id,
+          amount: spendConfig.total,
+          campaignType: "release",
+          releaseId: assetReleaseId,
+        }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function submitGeneralInquiry() {
+    if (!generalGoals) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/helm/media/release-inquiry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artistName: artistData.name,
+          campaignType: "general",
+          goals: generalGoals,
+          dailyBudget: generalSpend.daily,
+          duration: generalSpend.days,
+          total: generalSpend.total,
+        }),
+      });
+      if (res.ok) {
+        setSuccessMessage("Your campaign request has been sent to the Good Morning Music team. They'll be in touch within 24 hours.");
+        setSubmitted(true);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg max-h-[90vh] bg-[#0e0e0e] border border-[#2e2e2e] rounded-2xl flex flex-col overflow-hidden shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e1e1e] shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🎯</span>
+            <h3 className="text-sm font-semibold text-white">Buy Paid Media</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-5 flex flex-col gap-5">
+          {/* Success state */}
+          {submitted ? (
+            <div className="flex flex-col items-center gap-4 py-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-2xl">
+                ✓
+              </div>
+              <p className="text-sm font-semibold text-emerald-400">Submitted!</p>
+              <p className="text-xs text-zinc-400 leading-relaxed max-w-xs">{successMessage}</p>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          ) : step === "choose" ? (
+            /* Step 1: Choose campaign type */
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-zinc-300 font-medium">What would you like to promote?</p>
+              <div className="flex flex-col gap-3">
+                {[
+                  { type: "show" as CampaignType, icon: "🎤", label: "A Show", desc: "Promote a live show with your flyer" },
+                  { type: "release" as CampaignType, icon: "🎵", label: "A Release", desc: "Promote a music release with paid ads" },
+                  { type: "general" as CampaignType, icon: "⭐", label: "General Promotion", desc: "General artist promotion campaign" },
+                ].map(opt => (
+                  <button
+                    key={opt.type}
+                    onClick={() => {
+                      setCampaignType(opt.type);
+                      setStep(opt.type === "show" ? "show" : opt.type === "release" ? "release-choice" : "general");
+                    }}
+                    className="flex items-center gap-3 p-4 bg-[#111] border border-[#1e1e1e] rounded-xl hover:border-[#6366f1]/40 hover:bg-[#12121a] transition-all text-left"
+                  >
+                    <span className="text-2xl shrink-0">{opt.icon}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-white">{opt.label}</p>
+                      <p className="text-xs text-zinc-500">{opt.desc}</p>
+                    </div>
+                    <span className="ml-auto text-zinc-600">→</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : step === "show" ? (
+            /* Step 2A: Show campaign */
+            <div className="flex flex-col gap-4">
+              <button onClick={() => setStep("choose")} className="text-xs text-zinc-500 hover:text-zinc-300 self-start transition-colors">← Back</button>
+              <p className="text-sm font-semibold text-white">Upload your show flyer</p>
+
+              <label className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#2e2e2e] rounded-xl cursor-pointer hover:border-[#6366f1]/40 transition-colors">
+                <span className="text-2xl">{showFlyerFile ? "✓" : "📁"}</span>
+                <span className="text-xs text-zinc-400">{showFlyerFile ? showFlyerFile.name : "Click to upload (JPG, PNG, GIF, WEBP)"}</span>
+                <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" className="hidden" onChange={handleFlyerChange} />
+              </label>
+
+              {showFlyerPreview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={showFlyerPreview} alt="Flyer preview" className="w-full max-h-48 object-contain rounded-lg border border-[#1e1e1e]" />
+              )}
+
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="text-xs text-zinc-400 block mb-1">Show name / artist name</label>
+                  <input
+                    type="text"
+                    value={showName}
+                    onChange={e => setShowName(e.target.value)}
+                    placeholder={`${artistData.name} Live`}
+                    className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-zinc-400 block mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={showDate}
+                      onChange={e => setShowDate(e.target.value)}
+                      className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#6366f1]/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-400 block mb-1">Venue</label>
+                    <input
+                      type="text"
+                      value={showVenue}
+                      onChange={e => setShowVenue(e.target.value)}
+                      placeholder="Venue name"
+                      className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-400 block mb-1">Notes for the team (optional)</label>
+                  <textarea
+                    value={showNotes}
+                    onChange={e => setShowNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Any targeting preferences, links, or special instructions..."
+                    className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50 resize-none"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={submitShowInquiry}
+                disabled={isSubmitting || !showFlyerFile || !showName || !showDate || !showVenue}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isSubmitting ? "Sending…" : "Submit →"}
+              </button>
+            </div>
+          ) : step === "release-choice" ? (
+            /* Step 2B: Release — has creative? */
+            <div className="flex flex-col gap-4">
+              <button onClick={() => setStep("choose")} className="text-xs text-zinc-500 hover:text-zinc-300 self-start transition-colors">← Back</button>
+              <p className="text-sm font-semibold text-white">Do you already have ad creative designed?</p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => { setHasCreative(true); setStep("release-upload"); }}
+                  className="flex items-center gap-3 p-4 bg-[#111] border border-[#1e1e1e] rounded-xl hover:border-[#6366f1]/40 hover:bg-[#12121a] transition-all text-left"
+                >
+                  <span className="text-xl">✅</span>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Yes, I have an ad</p>
+                    <p className="text-xs text-zinc-500">Upload your existing creative (JPG, PNG, MP4, GIF)</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { setHasCreative(false); setStep("release-assets"); }}
+                  className="flex items-center gap-3 p-4 bg-[#111] border border-[#1e1e1e] rounded-xl hover:border-[#6366f1]/40 hover:bg-[#12121a] transition-all text-left"
+                >
+                  <span className="text-xl">🎨</span>
+                  <div>
+                    <p className="text-sm font-semibold text-white">No, create one for me</p>
+                    <p className="text-xs text-zinc-500">Share artwork + audio and we'll build your ad</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          ) : step === "release-upload" ? (
+            /* Step 2B-i: Upload existing ad */
+            <div className="flex flex-col gap-4">
+              <button onClick={() => setStep("release-choice")} className="text-xs text-zinc-500 hover:text-zinc-300 self-start transition-colors">← Back</button>
+              <p className="text-sm font-semibold text-white">Upload your ad creative</p>
+
+              <label className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#2e2e2e] rounded-xl cursor-pointer hover:border-[#6366f1]/40 transition-colors">
+                <span className="text-2xl">{releaseCreativeFile ? "✓" : "📁"}</span>
+                <span className="text-xs text-zinc-400">{releaseCreativeFile ? releaseCreativeFile.name : "Click to upload (JPG, PNG, MP4, GIF)"}</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,video/mp4"
+                  className="hidden"
+                  onChange={e => setReleaseCreativeFile(e.target.files?.[0] || null)}
+                />
+              </label>
+
+              <div>
+                <label className="text-xs text-zinc-400 block mb-1">Which release is this for?</label>
+                <select
+                  value={releaseId}
+                  onChange={e => setReleaseId(e.target.value)}
+                  className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#6366f1]/50"
+                >
+                  <option value="">Select a release…</option>
+                  {releases.map((r: Release) => (
+                    <option key={r.id} value={r.id}>{r.name} ({r.releaseDate?.slice(0, 4)})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-400 block mb-1">Notes (optional)</label>
+                <textarea
+                  value={releaseNotes}
+                  onChange={e => setReleaseNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Targeting preferences, budget range, special instructions..."
+                  className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50 resize-none"
+                />
+              </div>
+
+              <button
+                onClick={submitReleaseInquiry}
+                disabled={isSubmitting || !releaseCreativeFile || !releaseId}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isSubmitting ? "Sending…" : "Submit →"}
+              </button>
+            </div>
+          ) : step === "release-assets" ? (
+            /* Step 2B-ii: Create ad from assets */
+            <div className="flex flex-col gap-4">
+              <button onClick={() => setStep("release-choice")} className="text-xs text-zinc-500 hover:text-zinc-300 self-start transition-colors">← Back</button>
+              <p className="text-sm font-semibold text-white">Share your assets</p>
+
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="text-xs text-zinc-400 block mb-1">Artwork</label>
+                  <label className="flex items-center gap-2 p-3 border border-dashed border-[#2e2e2e] rounded-lg cursor-pointer hover:border-[#6366f1]/40 transition-colors">
+                    <span className="text-base">{artworkFile ? "✓" : "🖼️"}</span>
+                    <span className="text-xs text-zinc-400">{artworkFile ? artworkFile.name : "Upload artwork (JPG, PNG)"}</span>
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => setArtworkFile(e.target.files?.[0] || null)} />
+                  </label>
+                  <p className="text-[10px] text-zinc-600 mt-1">— or paste a URL —</p>
+                  <input
+                    type="url"
+                    value={artworkUrl}
+                    onChange={e => setArtworkUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full mt-1 bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-zinc-400 block mb-1">Audio file</label>
+                  <label className="flex items-center gap-2 p-3 border border-dashed border-[#2e2e2e] rounded-lg cursor-pointer hover:border-[#6366f1]/40 transition-colors">
+                    <span className="text-base">{audioFile ? "✓" : "🎵"}</span>
+                    <span className="text-xs text-zinc-400">{audioFile ? audioFile.name : "Upload audio (MP3, WAV, AAC)"}</span>
+                    <input type="file" accept="audio/mpeg,audio/wav,audio/aac,audio/mp3" className="hidden" onChange={e => setAudioFile(e.target.files?.[0] || null)} />
+                  </label>
+                </div>
+
+                <div>
+                  <label className="text-xs text-zinc-400 block mb-1">Which release?</label>
+                  <select
+                    value={assetReleaseId}
+                    onChange={e => setAssetReleaseId(e.target.value)}
+                    className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#6366f1]/50"
+                  >
+                    <option value="">Select a release…</option>
+                    {releases.map((r: Release) => (
+                      <option key={r.id} value={r.id}>{r.name} ({r.releaseDate?.slice(0, 4)})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <button
+                onClick={generatePreview}
+                disabled={isPreviewLoading || (!artworkFile && !artworkUrl) || !assetReleaseId}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isPreviewLoading ? "Generating preview…" : "Preview →"}
+              </button>
+            </div>
+          ) : step === "release-preview" ? (
+            /* Preview + spend selector */
+            <div className="flex flex-col gap-4">
+              <button onClick={() => setStep("release-assets")} className="text-xs text-zinc-500 hover:text-zinc-300 self-start transition-colors">← Back</button>
+              <p className="text-sm font-semibold text-white">Campaign Preview</p>
+
+              {previewData?.artworkUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={previewData.artworkUrl} alt="Ad preview" className="w-full max-h-56 object-contain rounded-lg border border-[#1e1e1e]" />
+              )}
+              {previewData?.message && (
+                <p className="text-xs text-zinc-400">{previewData.message}</p>
+              )}
+
+              <SpendSelector onChange={(daily, days, total) => setSpendConfig({ daily, days, total })} />
+
+              <button
+                onClick={launchCampaign}
+                disabled={isSubmitting || spendConfig.total === 0}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+              >
+                {isSubmitting ? "Redirecting to checkout…" : `Launch Campaign → $${spendConfig.total}`}
+              </button>
+            </div>
+          ) : step === "general" ? (
+            /* Step 2C: General promotion */
+            <div className="flex flex-col gap-4">
+              <button onClick={() => setStep("choose")} className="text-xs text-zinc-500 hover:text-zinc-300 self-start transition-colors">← Back</button>
+              <p className="text-sm font-semibold text-white">Tell us about your campaign goals</p>
+
+              <textarea
+                value={generalGoals}
+                onChange={e => setGeneralGoals(e.target.value)}
+                rows={4}
+                placeholder="What do you want to achieve? (e.g. grow followers, promote new single, increase streams...)"
+                className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50 resize-none"
+              />
+
+              <SpendSelector onChange={(daily, days, total) => setGeneralSpend({ daily, days, total })} />
+
+              <button
+                onClick={submitGeneralInquiry}
+                disabled={isSubmitting || !generalGoals || generalSpend.total === 0}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isSubmitting ? "Sending…" : "Submit →"}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -596,6 +1186,9 @@ function DashboardContent() {
   const [docModal, setDocModal] = useState<{ content: string; title: string } | null>(null);
   const [generatingDoc, setGeneratingDoc] = useState<string | null>(null);
 
+  // Paid media modal
+  const [showPaidMedia, setShowPaidMedia] = useState(false);
+
   // Check paid status on load
   useEffect(() => {
     fetch("/api/auth/session")
@@ -798,6 +1391,11 @@ function DashboardContent() {
         <DocModal content={docModal.content} title={docModal.title} onClose={() => setDocModal(null)} />
       )}
 
+      {/* Paid media modal */}
+      {showPaidMedia && artistData && (
+        <PaidMediaModal artistData={artistData} onClose={() => setShowPaidMedia(false)} />
+      )}
+
       {/* Generating overlay */}
       {generatingDoc && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -826,6 +1424,12 @@ function DashboardContent() {
             <span className="text-sm font-semibold text-white">Helm</span>
           </button>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowPaidMedia(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-violet-600/80 hover:bg-violet-600 border border-violet-500/30 transition-colors"
+            >
+              🎯 Buy Paid Media
+            </button>
             {isPaid ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-emerald-400 font-medium">⚡ Active</span>
