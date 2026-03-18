@@ -214,7 +214,7 @@ function HelmChat({
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({
-  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, chatMessages, isChatStreaming,
+  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming,
 }: {
   artistData: ArtistData;
   analysis: AnalysisResult;
@@ -222,6 +222,7 @@ function OverviewTab({
   onSubscribe: () => void;
   onSendChat: (text: string) => void;
   onGenerate: (type: DocType) => void;
+  onRoyaltyAudit: () => void;
   chatMessages: ChatMessage[];
   isChatStreaming: boolean;
 }) {
@@ -303,13 +304,14 @@ function OverviewTab({
               { label: "🔗 Pre-Save Link",        desc: "For upcoming release",               msg: "I have an upcoming release and need a pre-save strategy. Walk me through what to set up and how to promote it." },
               { label: "🛍️ Launch Merch Store",   desc: "Custom designs + fulfillment",       msg: "Help me launch a merch store. What products should I start with, which platform is best, and how do I promote it?" },
               { label: "🎸 Find Open For Slots",  desc: "Submit for touring openers",         msg: "I want to find opportunities to open for touring acts. How do I identify shows in my genre and who do I contact?" },
-              { label: "🔍 Royalty Audit",        desc: "Compare recordings vs PRO registrations", msg: "Let's run a royalty audit on my catalog. Walk me through registering all my works with ASCAP/BMI, the MLC, and SoundExchange." },
+              { label: "🔍 Royalty Audit",        desc: "Compare recordings vs PRO registrations", royaltyAudit: true },
             ].map((action) => (
               <button
                 key={action.label}
                 onClick={() => {
                   if (!isPaid) { onSubscribe(); return; }
                   if ("doc" in action && action.doc) onGenerate(action.doc);
+                  else if ("royaltyAudit" in action && action.royaltyAudit) onRoyaltyAudit();
                   else if ("msg" in action && action.msg) onSendChat(action.msg);
                 }}
                 className="flex flex-col gap-1 p-3 rounded-xl border bg-[#111] border-[#1e1e1e] hover:border-[#6366f1]/40 hover:bg-[#12121a] transition-all text-left"
@@ -434,12 +436,13 @@ function OverviewTab({
 
 // ─── WORKS & RECORDINGS TAB ──────────────────────────────────────────────────
 function WorksTab({
-  artist, isPaid, onSubscribe, onSendChat,
+  artist, isPaid, onSubscribe, onSendChat, onRoyaltyAudit,
 }: {
   artist: ArtistData;
   isPaid: boolean;
   onSubscribe: () => void;
   onSendChat: (text: string) => void;
+  onRoyaltyAudit: () => void;
 }) {
   const releases = artist.allReleases || [];
   const btn = (label: string, msg: string) => (
@@ -459,7 +462,12 @@ function WorksTab({
         </div>
         <div className="flex gap-2">
           {btn("📋 Capture Song Splits", `Let's capture song splits for ${artist.name}'s catalog. Walk me through the ownership splits for all ${releases.length} releases — who owns what percentage of publishing and master rights.`)}
-          {btn("🔍 Run Royalty Audit", `Run a royalty audit on ${artist.name}'s catalog. Compare all ${releases.length} releases against ASCAP/BMI, the MLC, and SoundExchange to find any unregistered works.`)}
+          <button
+            onClick={() => isPaid ? onRoyaltyAudit() : onSubscribe()}
+            className="px-3 py-2 rounded-lg text-xs font-semibold text-white bg-[#1e1e1e] hover:bg-[#2e2e2e] transition-colors"
+          >
+            🔍 Run Royalty Audit
+          </button>
         </div>
       </div>
 
@@ -473,7 +481,7 @@ function WorksTab({
             <strong className="text-white"> Good Morning Publishing Admin + Distribution</strong> with your approval.
           </p>
           <button
-            onClick={() => isPaid ? onSendChat(`Run a full royalty audit on ${artist.name}'s catalog. I have ${releases.length} releases on Spotify. Check against ASCAP/BMI, the MLC, and SoundExchange.`) : onSubscribe()}
+            onClick={() => isPaid ? onRoyaltyAudit() : onSubscribe()}
             className={`inline-block mt-2 text-xs font-semibold transition-colors ${isPaid ? "text-emerald-400 hover:text-emerald-300" : "text-[#6366f1] hover:text-[#818cf8]"}`}
           >
             {isPaid ? "Start audit →" : "Activate to start →"}
@@ -690,6 +698,63 @@ function DashboardContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artistData, chatMessages, isChatStreaming]);
+
+  // Royalty audit handler — streams real database search results
+  const handleRoyaltyAudit = useCallback(async () => {
+    if (!artistData || isChatStreaming) return;
+
+    setActiveTab("overview");
+
+    const userMsg: ChatMessage = { role: "user", content: "Run a royalty audit on my catalog" };
+    setChatMessages(prev => [...prev, userMsg]);
+    setIsChatStreaming(true);
+
+    // Add placeholder message
+    setChatMessages(prev => [...prev, { role: "assistant", content: "Running your royalty audit now. Searching The MLC, ASCAP, and BMI... \u23F3" }]);
+
+    const trackNames = [
+      ...artistData.allReleases.slice(0, 10).map(r => r.name),
+      ...artistData.topTracks.slice(0, 10).map(t => t.name),
+    ].filter((name, i, arr) => arr.indexOf(name) === i).slice(0, 10);
+
+    try {
+      const res = await fetch("/api/helm/royalty-audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artistName: artistData.name,
+          tracks: trackNames,
+          monthlyListeners: artistData.monthlyListeners,
+        }),
+      });
+
+      if (!res.ok) {
+        setChatMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: "assistant", content: "Sorry, the royalty audit failed. Please try again." };
+          return updated;
+        });
+        return;
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let content = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        content += decoder.decode(value, { stream: true });
+        setChatMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: "assistant", content };
+          return updated;
+        });
+      }
+    } finally {
+      setIsChatStreaming(false);
+    }
+  }, [artistData, isChatStreaming]);
 
   // Document generation handler
   const handleGenerateDoc = useCallback(async (type: DocType) => {
@@ -929,6 +994,7 @@ function DashboardContent() {
             onSubscribe={handleSubscribe}
             onSendChat={handleSendChat}
             onGenerate={handleGenerateDoc}
+            onRoyaltyAudit={handleRoyaltyAudit}
             chatMessages={chatMessages}
             isChatStreaming={isChatStreaming}
           />
@@ -939,6 +1005,7 @@ function DashboardContent() {
             isPaid={isPaid}
             onSubscribe={handleSubscribe}
             onSendChat={(msg) => { handleSendChat(msg); setActiveTab("overview"); }}
+            onRoyaltyAudit={() => { handleRoyaltyAudit(); setActiveTab("overview"); }}
           />
         )}
         {mode !== "queue" && activeTab === "release" && (

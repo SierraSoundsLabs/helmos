@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "app/api/helm/royalty-audit/route.ts": { "maxDuration": 60 }
+  },
   "crons": [
     {
       "path": "/api/agent/run",
