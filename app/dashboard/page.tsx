@@ -697,6 +697,36 @@ function LinksTab({
         )}
       </div>
 
+      {/* Pub Admin Referral card */}
+      <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-5">
+        <div className="flex items-start gap-3 mb-4">
+          <span className="text-2xl shrink-0">🎼</span>
+          <div>
+            <h2 className="text-sm font-semibold text-white mb-1">Free Publishing Administration</h2>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Let Good Morning Music handle your publishing. We register your works everywhere,
+              collect royalties from every source, and take only 15% of what we collect.
+              No setup fees. No monthly fees. Quit anytime.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {["ASCAP/BMI registration", "MLC enrollment", "SoundExchange", "International"].map((tag) => (
+            <span key={tag} className="px-2.5 py-1 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              {tag}
+            </span>
+          ))}
+        </div>
+        <a
+          href="https://goodmornmusic.com/pub-admin?ref=helm"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors"
+        >
+          Apply for Free Pub Admin →
+        </a>
+      </div>
+
     </div>
   );
 }
