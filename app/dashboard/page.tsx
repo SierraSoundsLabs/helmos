@@ -5,6 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation";
 import type { ArtistData } from "@/lib/spotify";
 import type { AnalysisResult } from "@/lib/claude";
 import QueueDashboard from "@/components/QueueDashboard";
+import type { OutreachDraft } from "@/app/api/helm/outreach/generate/route";
+import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
+import type { InboundEmail } from "@/app/api/helm/outreach/webhook/route";
+import { toSlug, artistEmail } from "@/lib/email";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const STRIPE_PRICE = "price_1T9CqJACiFFf49dvYHMObuOd";
@@ -739,6 +743,348 @@ function LinksTab({
   );
 }
 
+
+// ─── OUTREACH TAB ─────────────────────────────────────────────────────────────
+function OutreachTab({ artist, isPaid, onSubscribe }: {
+  artist: ArtistData;
+  isPaid: boolean;
+  onSubscribe: () => void;
+}) {
+  const slug = toSlug(artist.name);
+  const email = artistEmail(slug);
+
+  const [copied, setCopied] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [history, setHistory] = useState<OutreachRecord[]>([]);
+  const [inbox, setInbox] = useState<InboundEmail[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [replyModal, setReplyModal] = useState<InboundEmail | null>(null);
+  const [replyBody, setReplyBody] = useState("");
+  const [replySending, setReplySending] = useState(false);
+
+  // Load history + inbox on mount
+  useEffect(() => {
+    if (!isPaid) return;
+    Promise.all([
+      fetch(`/api/helm/outreach/history?artistId=${artist.id}`).then(r => r.json()),
+      fetch(`/api/helm/outreach/inbox?artistSlug=${encodeURIComponent(slug)}`).then(r => r.json()),
+    ]).then(([histData, inboxData]) => {
+      setHistory(histData.records ?? []);
+      setInbox(inboxData.emails ?? []);
+      setHistoryLoaded(true);
+    }).catch(() => setHistoryLoaded(true));
+  }, [artist.id, slug, isPaid]);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(email);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleGenerate = async (count: number) => {
+    if (!isPaid) { onSubscribe(); return; }
+    setGenerating(true);
+    setDrafts([]);
+    setSendResult(null);
+    try {
+      const res = await fetch("/api/helm/outreach/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artistData: artist, count }),
+      });
+      const data = await res.json();
+      if (data.drafts) {
+        setDrafts(data.drafts);
+        setSelected(new Set(data.drafts.map((_: OutreachDraft, i: number) => i)));
+      }
+    } catch (e) {
+      console.error("Generate error:", e);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const toggleSelect = (i: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+
+  const handleSendSelected = async () => {
+    if (!isPaid) { onSubscribe(); return; }
+    const toSend = drafts.filter((_, i) => selected.has(i));
+    if (toSend.length === 0) return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/helm/outreach/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artistId: artist.id, artistName: artist.name, drafts: toSend }),
+      });
+      const data = await res.json();
+      setSendResult({ sent: data.sent ?? 0, failed: data.failed ?? 0 });
+      setDrafts([]);
+      setSelected(new Set());
+      // Refresh history
+      fetch(`/api/helm/outreach/history?artistId=${artist.id}`)
+        .then(r => r.json())
+        .then(d => setHistory(d.records ?? []))
+        .catch(() => {});
+    } catch (e) {
+      console.error("Send error:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleReply = async () => {
+    if (!replyModal) return;
+    setReplySending(true);
+    try {
+      await fetch("/api/helm/outreach/reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artistSlug: slug,
+          to: replyModal.from,
+          subject: replyModal.subject.startsWith("Re:") ? replyModal.subject : `Re: ${replyModal.subject}`,
+          body: replyBody,
+          inReplyToId: replyModal.inReplyTo,
+        }),
+      });
+      setReplyModal(null);
+      setReplyBody("");
+    } catch (e) {
+      console.error("Reply error:", e);
+    } finally {
+      setReplySending(false);
+    }
+  };
+
+  const roleColors: Record<string, string> = {
+    "Journalist": "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    "Playlist Curator": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    "Booking Agent": "bg-teal-500/20 text-teal-400 border-teal-500/30",
+    "Music Supervisor": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    "Radio DJ": "bg-pink-500/20 text-pink-400 border-pink-500/30",
+  };
+
+  return (
+    <div className="flex flex-col gap-8 max-w-3xl">
+      {/* Reply modal */}
+      {replyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setReplyModal(null)}>
+          <div className="w-full max-w-lg bg-[#0e0e0e] border border-[#2e2e2e] rounded-2xl flex flex-col overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e1e1e]">
+              <h3 className="text-sm font-semibold text-white">Reply to {replyModal.fromName || replyModal.from}</h3>
+              <button onClick={() => setReplyModal(null)} className="text-zinc-500 hover:text-white transition-colors text-sm">✕</button>
+            </div>
+            <div className="p-5 flex flex-col gap-3">
+              <div className="bg-[#111] border border-[#1e1e1e] rounded-lg p-3">
+                <p className="text-[10px] text-zinc-500 mb-1">Original message</p>
+                <p className="text-xs text-zinc-400 line-clamp-3">{replyModal.text}</p>
+              </div>
+              <textarea
+                value={replyBody}
+                onChange={e => setReplyBody(e.target.value)}
+                placeholder="Type your reply..."
+                rows={6}
+                className="w-full bg-[#111] border border-[#1e1e1e] rounded-lg p-3 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50 resize-none"
+              />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setReplyModal(null)} className="px-4 py-2 rounded-lg text-xs text-zinc-400 bg-[#1e1e1e] hover:bg-[#2e2e2e] transition-colors">Cancel</button>
+                <button
+                  onClick={handleReply}
+                  disabled={replySending || !replyBody.trim()}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors disabled:opacity-50"
+                >
+                  {replySending ? "Sending…" : `Send from ${email}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Your outreach address */}
+      <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
+        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">Your Outreach Address</p>
+        <div className="flex items-center gap-3">
+          <span className="text-lg">📧</span>
+          <span className="text-base font-semibold text-white font-mono">{email}</span>
+          <button
+            onClick={handleCopy}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${copied ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e]"}`}
+          >
+            {copied ? "Copied ✓" : "Copy"}
+          </button>
+        </div>
+        <p className="text-xs text-zinc-500 mt-2">Outreach is sent from this address. Replies arrive in your inbox below.</p>
+      </div>
+
+      {/* Generate section */}
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-white mb-1">Generate Outreach</h2>
+          <p className="text-xs text-zinc-500">Helm will research and draft up to 10 personalized emails per day targeting journalists, playlist curators, and booking agents in your genre.</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {[3, 5, 10].map(n => (
+            <button
+              key={n}
+              onClick={() => handleGenerate(n)}
+              disabled={generating}
+              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+            >
+              {generating ? "Researching…" : `Generate ${n} Emails →`}
+            </button>
+          ))}
+        </div>
+
+        {/* Generating state */}
+        {generating && (
+          <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-6 flex flex-col items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center animate-pulse">
+              <span className="text-sm font-bold text-white">H</span>
+            </div>
+            <p className="text-xs text-zinc-400">Researching targets for {artist.name}…</p>
+            <div className="flex gap-1.5">
+              {[0,1,2].map(i => (
+                <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#6366f1]"
+                  style={{ animation: `bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Send result */}
+        {sendResult && (
+          <div className={`rounded-xl p-4 border text-sm font-medium ${sendResult.sent > 0 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border-red-500/30 text-red-400"}`}>
+            {sendResult.sent > 0 && `✓ ${sendResult.sent} email${sendResult.sent !== 1 ? "s" : ""} sent`}
+            {sendResult.failed > 0 && ` · ${sendResult.failed} failed`}
+          </div>
+        )}
+      </div>
+
+      {/* Drafts review */}
+      {drafts.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">{drafts.length} Draft{drafts.length !== 1 ? "s" : ""} Ready</h2>
+            <span className="text-xs text-zinc-500">{selected.size} selected</span>
+          </div>
+          <div className="flex flex-col gap-3">
+            {drafts.map((draft, i) => (
+              <div
+                key={i}
+                className={`bg-[#111] border rounded-xl p-4 transition-colors cursor-pointer ${selected.has(i) ? "border-[#6366f1]/40 bg-[#12121a]" : "border-[#1e1e1e]"}`}
+                onClick={() => toggleSelect(i)}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${selected.has(i) ? "bg-[#6366f1] border-[#6366f1]" : "border-zinc-600"}`}>
+                    {selected.has(i) && <span className="text-[8px] text-white font-bold">✓</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-sm font-semibold text-white">{draft.toName}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${roleColors[draft.toRole] || "bg-zinc-700/40 text-zinc-400 border-zinc-600/30"}`}>
+                        {draft.toRole}
+                      </span>
+                      {draft.toPublication && (
+                        <span className="text-[11px] text-zinc-500">{draft.toPublication}</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-500 mb-2 italic">{draft.rationale}</p>
+                    <p className="text-xs text-zinc-300 font-medium mb-1">Subject: {draft.subject}</p>
+                    <p className="text-xs text-zinc-500">{draft.body.slice(0, 120)}{draft.body.length > 120 ? "…" : ""}</p>
+                    <p className="text-[10px] text-zinc-600 mt-1">To: {draft.to}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={handleSendSelected}
+            disabled={sending || selected.size === 0}
+            className="self-start px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+          >
+            {sending ? "Sending…" : `Send ${selected.size} Selected →`}
+          </button>
+        </div>
+      )}
+
+      {/* Sent history */}
+      <div className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-white">Sent History</h2>
+        {!historyLoaded ? (
+          <p className="text-xs text-zinc-500">Loading…</p>
+        ) : history.length === 0 ? (
+          <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-6 text-center">
+            <p className="text-xs text-zinc-500">No emails sent yet. Generate and send your first outreach above.</p>
+          </div>
+        ) : (
+          <div className="bg-[#111] border border-[#1e1e1e] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-[1fr_1fr_2fr_auto] gap-4 px-4 py-2 border-b border-[#1e1e1e] text-[10px] text-zinc-500 uppercase tracking-wider">
+              <span>Date</span><span>To</span><span>Subject</span><span>Status</span>
+            </div>
+            <div className="divide-y divide-[#1a1a1a]">
+              {history.map(record => (
+                <div key={record.id} className="grid grid-cols-[1fr_1fr_2fr_auto] gap-4 items-center px-4 py-3 hover:bg-[#141414] transition-colors">
+                  <span className="text-[11px] text-zinc-500">{new Date(record.sentAt).toLocaleDateString()}</span>
+                  <div className="min-w-0">
+                    <p className="text-xs text-zinc-300 truncate">{record.toName}</p>
+                    <p className="text-[10px] text-zinc-600 truncate">{record.to}</p>
+                  </div>
+                  <p className="text-xs text-zinc-400 truncate">{record.subject}</p>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${record.status === "sent" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                    {record.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Inbox / replies */}
+      {inbox.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-white">Replies <span className="text-zinc-500 font-normal">({inbox.length})</span></h2>
+          <div className="flex flex-col gap-3">
+            {inbox.map(msg => (
+              <div key={msg.id} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4 hover:border-[#2e2e2e] transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-semibold text-white">{msg.fromName || msg.from}</span>
+                      <span className="text-[10px] text-zinc-600">{new Date(msg.receivedAt).toLocaleDateString()}</span>
+                    </div>
+                    <p className="text-xs text-zinc-300 font-medium mb-1">{msg.subject}</p>
+                    <p className="text-xs text-zinc-500 line-clamp-2">{msg.text}</p>
+                  </div>
+                  <button
+                    onClick={() => { setReplyModal(msg); setReplyBody(""); }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#1e1e1e] hover:bg-[#2e2e2e] transition-colors shrink-0"
+                  >
+                    Reply
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN DASHBOARD ────────────────────────────────────────────────────────────
 function DashboardContent() {
   const searchParams = useSearchParams();
@@ -750,7 +1096,7 @@ function DashboardContent() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [phase, setPhase] = useState<"loading-artist" | "loading-analysis" | "done" | "error">("loading-artist");
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach">("overview");
 
   // Auth / paid state
   const [isPaid, setIsPaid] = useState(false);
@@ -1015,6 +1361,7 @@ function DashboardContent() {
     { id: "works",    label: `Works & Recordings (${artistData.allReleases.length})` },
     { id: "release",  label: "Release Marketing" },
     { id: "links",    label: "🔗 Links" },
+    { id: "outreach",  label: "📧 Outreach" },
   ] as const;
 
   return (
@@ -1182,6 +1529,13 @@ function DashboardContent() {
             artist={artistData}
             isPaid={isPaid}
             onSendChat={handleSendChat}
+          />
+        )}
+        {mode !== "queue" && activeTab === "outreach" && (
+          <OutreachTab
+            artist={artistData}
+            isPaid={isPaid}
+            onSubscribe={handleSubscribe}
           />
         )}
       </div>
