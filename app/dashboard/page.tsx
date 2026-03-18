@@ -571,6 +571,136 @@ function ReleaseMarketingTab({
   );
 }
 
+// ─── LINKS TAB ────────────────────────────────────────────────────────────────
+function artistSlugFromName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function LinksTab({
+  artist, isPaid, onSendChat,
+}: {
+  artist: ArtistData;
+  isPaid: boolean;
+  onSendChat: (text: string) => void;
+}) {
+  const [copiedLinks, setCopiedLinks] = useState<string | null>(null);
+  const [copiedOneSheet, setCopiedOneSheet] = useState(false);
+  const [published, setPublished] = useState<boolean | null>(null);
+
+  const slug = artistSlugFromName(artist.name);
+  const linksUrl = `https://helmos.co/links/${slug}`;
+  const onesheetUrl = `https://helmos.co/${slug}`;
+
+  // Check if one-sheet is published
+  useEffect(() => {
+    fetch(`/api/helm/onesheet/${slug}`)
+      .then(r => { setPublished(r.ok); })
+      .catch(() => setPublished(false));
+  }, [slug]);
+
+  const copyToClipboard = (text: string, which: "links" | "onesheet") => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    if (which === "links") {
+      setCopiedLinks("Copied!");
+      setTimeout(() => setCopiedLinks(null), 2000);
+    } else {
+      setCopiedOneSheet(true);
+      setTimeout(() => setCopiedOneSheet(false), 2000);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl flex flex-col gap-6">
+
+      {/* Links Page card */}
+      <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Your Links Page</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">Share one link to everything</p>
+          </div>
+          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full shrink-0">LIVE</span>
+        </div>
+        <div className="flex items-center gap-2 p-3 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg mb-3">
+          <span className="text-xs text-zinc-400 flex-1 truncate">{linksUrl}</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => copyToClipboard(linksUrl, "links")}
+            className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+              copiedLinks ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e]"
+            }`}
+          >
+            {copiedLinks ?? "Copy Link"}
+          </button>
+          <a
+            href={linksUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e] transition-colors text-center"
+          >
+            Preview →
+          </a>
+        </div>
+      </div>
+
+      {/* One-Sheet card */}
+      <div className={`rounded-xl p-5 border ${published ? "bg-[#111] border-[#1e1e1e]" : "border-dashed border-[#2e2e2e] bg-[#0d0d0d]"}`}>
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Your One-Sheet</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">Public artist profile page</p>
+          </div>
+          {published && (
+            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full shrink-0">PUBLISHED</span>
+          )}
+        </div>
+
+        {published ? (
+          <>
+            <div className="flex items-center gap-2 p-3 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg mb-3">
+              <span className="text-xs text-zinc-400 flex-1 truncate">{onesheetUrl}</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => copyToClipboard(onesheetUrl, "onesheet")}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  copiedOneSheet ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e]"
+                }`}
+              >
+                {copiedOneSheet ? "Copied!" : "Copy Link"}
+              </button>
+              <a
+                href={onesheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e] transition-colors text-center"
+              >
+                View →
+              </a>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="text-center py-4">
+              <p className="text-2xl mb-2">📄</p>
+              <p className="text-sm font-semibold text-white mb-1">Create Your One-Sheet</p>
+              <p className="text-xs text-zinc-500">Generate your artist profile page at helmos.co/{slug}</p>
+            </div>
+            <button
+              onClick={() => onSendChat(`Generate and publish my artist one-sheet page at helmos.co/${slug}. Use my Spotify data to fill in bio, top tracks, latest release, and social links.`)}
+              className="w-full px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
+            >
+              Generate One-Sheet →
+            </button>
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
 // ─── MAIN DASHBOARD ────────────────────────────────────────────────────────────
 function DashboardContent() {
   const searchParams = useSearchParams();
@@ -582,7 +712,7 @@ function DashboardContent() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [phase, setPhase] = useState<"loading-artist" | "loading-analysis" | "done" | "error">("loading-artist");
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links">("overview");
 
   // Auth / paid state
   const [isPaid, setIsPaid] = useState(false);
@@ -789,6 +919,7 @@ function DashboardContent() {
     { id: "overview", label: "Overview" },
     { id: "works",    label: `Works & Recordings (${artistData.allReleases.length})` },
     { id: "release",  label: "Release Marketing" },
+    { id: "links",    label: "🔗 Links" },
   ] as const;
 
   return (
@@ -947,6 +1078,13 @@ function DashboardContent() {
             isPaid={isPaid}
             onSubscribe={handleSubscribe}
             onSendChat={(msg) => { handleSendChat(msg); setActiveTab("overview"); }}
+          />
+        )}
+        {mode !== "queue" && activeTab === "links" && (
+          <LinksTab
+            artist={artistData}
+            isPaid={isPaid}
+            onSendChat={handleSendChat}
           />
         )}
       </div>
