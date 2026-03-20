@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { kvSet } from "@/lib/kv";
+import { kvSet, kvGet } from "@/lib/kv";
 import { sendEmail } from "@/lib/email";
 import crypto from "crypto";
 
@@ -24,9 +24,15 @@ async function findStripeCustomer(email: string): Promise<{ customerId: string; 
         s.payment_status === "paid" || s.status === "complete"
     );
     if (paidSession) {
+      // Prefer artist_id from customer metadata (allows self-serve artist change)
+      // Fall back to checkout session metadata (original signup)
+      const artistId =
+        customer.metadata?.artist_id ||
+        paidSession.metadata?.artist_id ||
+        "";
       return {
         customerId: customer.id,
-        artistId: paidSession.metadata?.artist_id ?? "",
+        artistId,
       };
     }
   }
@@ -47,6 +53,13 @@ export async function POST(req: NextRequest) {
     // Always return ok — don't reveal if email exists (security best practice)
     if (!customer) {
       return NextResponse.json({ ok: true });
+    }
+
+    // Check for artist override in KV (allows changing artist without new Stripe session)
+    const overrideKey = `artist_override:${customer.customerId}`;
+    const override = await kvGet<{ artistId: string }>(overrideKey);
+    if (override?.artistId) {
+      customer.artistId = override.artistId;
     }
 
     // Generate secure one-time token
