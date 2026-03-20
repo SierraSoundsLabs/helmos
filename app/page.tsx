@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
 const LOADING_STEPS = [
   "Scanning your Spotify profile...",
@@ -9,13 +10,25 @@ const LOADING_STEPS = [
   "Building your dashboard...",
 ];
 
-// ── HERO + URL INPUT ─────────────────────────────────────────────────────────
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
+
+  // Magic link login state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginState, setLoginState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [loginError, setLoginError] = useState("");
+
+  useEffect(() => {
+    const err = searchParams.get("error");
+    if (err === "expired") setLoginError("Your login link has expired. Please request a new one.");
+    else if (err === "invalid") setLoginError("Invalid login link. Please request a new one.");
+    else if (err === "server") setLoginError("Something went wrong. Please try again.");
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,7 +45,6 @@ export default function Home() {
     setLoading(true);
     setLoadingStep(0);
 
-    // Cycle through loading steps
     const interval = setInterval(() => {
       setLoadingStep(prev => {
         if (prev < LOADING_STEPS.length - 1) return prev + 1;
@@ -41,11 +53,41 @@ export default function Home() {
       });
     }, 500);
 
-    // Navigate after 1.5s
     setTimeout(() => {
       clearInterval(interval);
       router.push(`/dashboard?artist=${artistId}`);
     }, 1500);
+  }
+
+  async function handleMagicLink(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginError("");
+    const email = loginEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      setLoginError("Please enter a valid email address.");
+      return;
+    }
+
+    setLoginState("sending");
+
+    try {
+      const res = await fetch("/api/auth/magic/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!res.ok) {
+        setLoginState("error");
+        setLoginError("Something went wrong. Please try again.");
+        return;
+      }
+
+      setLoginState("sent");
+    } catch {
+      setLoginState("error");
+      setLoginError("Something went wrong. Please try again.");
+    }
   }
 
   return (
@@ -59,7 +101,6 @@ export default function Home() {
       {loading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#080808]">
           <div className="flex flex-col items-center gap-6">
-            {/* Animated Helm logo */}
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center"
               style={{ animation: "helmPulse 1s ease-in-out infinite" }}>
               <span className="text-2xl font-bold text-white">H</span>
@@ -122,7 +163,7 @@ export default function Home() {
             ))}
           </div>
 
-          {/* URL input */}
+          {/* Spotify URL input */}
           <form onSubmit={handleSubmit} className="w-full flex flex-col gap-3">
             <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
               <SpotifyIcon />
@@ -149,9 +190,64 @@ export default function Home() {
           <p className="text-xs text-zinc-600">
             Free · No account required · Try 3 days free · $49/mo AI Artist Manager
           </p>
+
+          {/* ── MAGIC LINK LOGIN ── */}
+          <div className="w-full border-t border-[#1e1e1e] pt-6 flex flex-col gap-4">
+            <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">Already a member?</p>
+
+            {loginState === "sent" ? (
+              <div className="flex flex-col items-center gap-3 py-4">
+                <div className="w-10 h-10 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 flex items-center justify-center">
+                  <span className="text-lg">📬</span>
+                </div>
+                <p className="text-sm text-white font-medium">Check your inbox</p>
+                <p className="text-xs text-zinc-500 text-center">
+                  We sent a login link to <span className="text-zinc-300">{loginEmail}</span>.
+                  <br />It expires in 15 minutes.
+                </p>
+                <button
+                  onClick={() => { setLoginState("idle"); setLoginEmail(""); }}
+                  className="text-xs text-[#6366f1] hover:underline mt-1"
+                >
+                  Use a different email
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleMagicLink} className="w-full flex flex-col gap-3">
+                <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
+                  <MailIcon />
+                  <input
+                    type="email"
+                    value={loginEmail}
+                    onChange={e => setLoginEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
+                    autoComplete="email"
+                  />
+                </div>
+                {loginError && <p className="text-xs text-red-400 text-center">{loginError}</p>}
+                <button
+                  type="submit"
+                  disabled={loginState === "sending"}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-white border border-[#2e2e2e] bg-[#111] hover:bg-[#1a1a1a] hover:border-[#6366f1]/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {loginState === "sending" ? "Sending…" : "Email me a login link →"}
+                </button>
+              </form>
+            )}
+          </div>
+
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#080808]" />}>
+      <HomeContent />
+    </Suspense>
   );
 }
 
@@ -160,6 +256,15 @@ function SpotifyIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-[#1DB954] shrink-0">
       <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500 shrink-0">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
     </svg>
   );
 }
