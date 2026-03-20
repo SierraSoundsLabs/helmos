@@ -8,12 +8,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Helmos — AI Chief of Staff for Music",
+  title: "Helmos — Automated Chief Growth Officer for Music",
   description:
-    "Automated growth work for Creative Entrepreneurs. Paste your Spotify link and get a personalized action plan.",
+    "Automated Chief Growth Officer for Music. Paste your Spotify link and get a personalized action plan.",
   openGraph: {
-    title: "Helmos — AI Chief of Staff for Music",
-    description: "Automated growth work for Creative Entrepreneurs.",
+    title: "Helmos — Automated Chief Growth Officer for Music",
+    description: "Automated Chief Growth Officer for Music.",
     siteName: "Helmos",
   },
 };
