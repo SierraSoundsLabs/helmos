@@ -25,7 +25,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased`}>{children}</body>
+      <body className={`${inter.variable} font-sans antialiased`}>
+        {children}
+        <footer className="w-full text-center py-4 text-xs text-zinc-600">
+          © 2026 Sierra Sounds LLC
+        </footer>
+      </body>
     </html>
   );
 }
