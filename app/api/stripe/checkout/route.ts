@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PRICE_ID = "price_1T9CqJACiFFf49dvYHMObuOd";
+const PRICE_ID = "price_1TEZNKAq0rXznfHsTI2kXoVX"; // Helmos Pro $19/mo — Sierra Sounds LLC
 const BASE_URL = "https://helmos.co";
 
 export async function POST(req: NextRequest) {
