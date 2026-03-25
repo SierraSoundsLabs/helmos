@@ -14,6 +14,7 @@ export async function GET() {
     authenticated: true,
     email: session.email,
     artistId: session.artistId,
+    customerId: session.customerId,
     plan: session.plan,
   });
 }
