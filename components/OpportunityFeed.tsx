@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { OpportunityTask, OpportunityType } from "@/lib/types";
 
 const TYPE_CONFIG: Record<OpportunityType, { emoji: string; label: string; color: string }> = {
@@ -16,24 +16,63 @@ interface Props {
   artistName: string;
   genres: string[];
   monthlyListeners: number;
+  onNewCount?: (count: number) => void;
 }
 
-export default function OpportunityFeed({ artistId, artistName, genres, monthlyListeners }: Props) {
+export default function OpportunityFeed({ artistId, artistName, genres, monthlyListeners, onNewCount }: Props) {
   const [opportunities, setOpportunities] = useState<OpportunityTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [refilling, setRefilling] = useState(false);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
+  // Track which cards are animating out
+  const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
+  const pollCountRef = useRef(0);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchOpportunities = useCallback(async () => {
     try {
       const res = await fetch("/api/helm/opportunities?status=new");
       if (!res.ok) return;
       const data = await res.json() as { opportunities: OpportunityTask[] };
-      setOpportunities((data.opportunities ?? []).slice(0, 5));
+      const fresh = (data.opportunities ?? []).slice(0, 5);
+      setOpportunities(fresh);
+      onNewCount?.(fresh.length);
+      return fresh;
     } catch {
-      // silent fail
+      return undefined;
     }
+  }, [onNewCount]);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    pollCountRef.current = 0;
+    setRefilling(false);
   }, []);
+
+  const startPolling = useCallback(() => {
+    pollCountRef.current = 0;
+    setRefilling(true);
+
+    const poll = async () => {
+      if (pollCountRef.current >= 3) {
+        stopPolling();
+        return;
+      }
+      pollCountRef.current++;
+      const fresh = await fetchOpportunities();
+      if (fresh && fresh.length > 2) {
+        stopPolling();
+        return;
+      }
+      pollTimerRef.current = setTimeout(poll, 30_000);
+    };
+
+    pollTimerRef.current = setTimeout(poll, 30_000);
+  }, [fetchOpportunities, stopPolling]);
 
   const runScan = useCallback(async () => {
     setScanning(true);
@@ -60,48 +99,84 @@ export default function OpportunityFeed({ artistId, artistName, genres, monthlyL
         const data = await res.json() as { opportunities: OpportunityTask[] };
         const existing = (data.opportunities ?? []).slice(0, 5);
         setOpportunities(existing);
+        onNewCount?.(existing.length);
         if (existing.length === 0) {
-          // Auto-scan on first load
           await runScan();
         }
       }
       setLoading(false);
     })();
-  }, [runScan]);
+    return () => stopPolling();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleDismiss = async (id: string) => {
+  const animateOutThen = useCallback((id: string, action: () => Promise<void>) => {
+    setExitingIds(prev => new Set(prev).add(id));
+    // Wait for CSS transition to complete before removing from state
+    setTimeout(async () => {
+      await action();
+      setExitingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 300);
+  }, []);
+
+  const handleDismiss = useCallback(async (id: string) => {
     setDismissingId(id);
-    try {
-      await fetch(`/api/helm/opportunities/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "dismissed" }),
-      });
-      setOpportunities(prev => prev.filter(o => o.id !== id));
-    } catch {
-      // silent fail
-    } finally {
-      setDismissingId(null);
-    }
-  };
+    animateOutThen(id, async () => {
+      try {
+        await fetch(`/api/helm/opportunities/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "dismissed" }),
+        });
+        setOpportunities(prev => {
+          const next = prev.filter(o => o.id !== id);
+          onNewCount?.(next.length);
+          if (next.length <= 2) startPolling();
+          return next;
+        });
+      } catch {
+        // silent fail
+      } finally {
+        setDismissingId(null);
+      }
+    });
+  }, [animateOutThen, onNewCount, startPolling]);
 
-  const handleApprove = async (id: string) => {
-    try {
-      await fetch(`/api/helm/opportunities/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "approved" }),
-      });
-      setOpportunities(prev => prev.map(o => o.id === id ? { ...o, status: "approved" } : o));
-    } catch {
-      // silent fail
-    }
-  };
+  const handleApprove = useCallback(async (id: string) => {
+    animateOutThen(id, async () => {
+      try {
+        await fetch(`/api/helm/opportunities/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "approved" }),
+        });
+        setOpportunities(prev => {
+          const next = prev.filter(o => o.id !== id);
+          onNewCount?.(next.length);
+          if (next.length <= 2) startPolling();
+          return next;
+        });
+      } catch {
+        // silent fail
+      }
+    });
+  }, [animateOutThen, onNewCount, startPolling]);
 
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-white">Opportunities</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-white">Opportunities</h2>
+          {opportunities.length > 0 && (
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-[#6366f1]/80 text-white">
+              {opportunities.length}
+            </span>
+          )}
+        </div>
         <button
           onClick={runScan}
           disabled={scanning}
@@ -138,22 +213,20 @@ export default function OpportunityFeed({ artistId, artistName, genres, monthlyL
         <div className="flex flex-col gap-3">
           {opportunities.map(opp => {
             const conf = TYPE_CONFIG[opp.type] ?? { emoji: "🎯", label: opp.type, color: "bg-zinc-700/40 text-zinc-400 border-zinc-600/30" };
-            const isApproved = opp.status === "approved";
+            const isExiting = exitingIds.has(opp.id);
             return (
               <div
                 key={opp.id}
-                className={`bg-[#111] border rounded-xl p-4 transition-colors ${isApproved ? "border-[#6366f1]/40" : "border-[#1e1e1e] hover:border-[#2e2e2e]"}`}
+                className={`bg-[#111] border border-[#1e1e1e] hover:border-[#2e2e2e] rounded-xl p-4 transition-all duration-300 ${
+                  isExiting ? "opacity-0 -translate-x-2 scale-95 pointer-events-none" : "opacity-100 translate-x-0 scale-100"
+                }`}
+                style={{ overflow: "hidden" }}
               >
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${conf.color}`}>
                       {conf.emoji} {conf.label}
                     </span>
-                    {isApproved && (
-                      <span className="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold border bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
-                        ✓ Saved
-                      </span>
-                    )}
                   </div>
                   {opp.deadline && (
                     <span className="text-[10px] text-zinc-500 shrink-0 whitespace-nowrap">⏰ {opp.deadline}</span>
@@ -174,14 +247,12 @@ export default function OpportunityFeed({ artistId, artistName, genres, monthlyL
                       {opp.type === "festival" ? "Apply →" : "Explore →"}
                     </a>
                   )}
-                  {!isApproved && (
-                    <button
-                      onClick={() => handleApprove(opp.id)}
-                      className="px-3 py-1 rounded-lg text-[11px] font-semibold text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/10 transition-colors"
-                    >
-                      Save
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleApprove(opp.id)}
+                    className="px-3 py-1 rounded-lg text-[11px] font-semibold text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/10 transition-colors"
+                  >
+                    Save
+                  </button>
                   <button
                     onClick={() => handleDismiss(opp.id)}
                     disabled={dismissingId === opp.id}
@@ -193,6 +264,13 @@ export default function OpportunityFeed({ artistId, artistName, genres, monthlyL
               </div>
             );
           })}
+
+          {refilling && (
+            <div className="flex items-center gap-2 px-1 py-2 text-zinc-500">
+              <span className="inline-block w-3 h-3 border-2 border-zinc-600 border-t-[#6366f1] rounded-full animate-spin shrink-0" />
+              <span className="text-[11px]">Finding more opportunities…</span>
+            </div>
+          )}
         </div>
       )}
     </div>

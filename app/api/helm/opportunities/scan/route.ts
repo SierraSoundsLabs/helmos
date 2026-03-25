@@ -1,10 +1,18 @@
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
-import { saveOpportunity, getUserOpportunities } from "@/lib/tasks";
+import {
+  saveOpportunity,
+  getUserOpportunities,
+  getRecentTypes,
+  recordSurfacedTypes,
+  setLastScanTime,
+} from "@/lib/tasks";
 import type { OpportunityTask, OpportunityType } from "@/lib/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const ALL_TYPES: OpportunityType[] = ["festival", "playlist", "press", "tiktok_growth", "sync"];
 
 function generateId() {
   return `opp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -38,6 +46,20 @@ interface ScannedOpportunity {
   deadline?: string;
 }
 
+/** Pick which types to focus on this scan — de-prioritize recently surfaced ones */
+function pickTargetTypes(
+  recentTypes: OpportunityType[],
+  overrideTypes?: OpportunityType[],
+): OpportunityType[] {
+  if (overrideTypes?.length) return overrideTypes;
+  // Count how many times each type appears in recent history
+  const recentSet = new Set(recentTypes.slice(0, 3)); // last 3 are "hot"
+  const prioritized = ALL_TYPES.filter(t => !recentSet.has(t));
+  const deprioritized = ALL_TYPES.filter(t => recentSet.has(t));
+  // Return non-recent first, then recent — take up to 4 for search queries
+  return [...prioritized, ...deprioritized].slice(0, 4);
+}
+
 export async function POST(req: NextRequest) {
   const session = getSession(req);
   if (!session) {
@@ -51,6 +73,8 @@ export async function POST(req: NextRequest) {
     artistName?: string;
     genres?: string[];
     monthlyListeners?: number;
+    targetTypes?: OpportunityType[];
+    forceRefresh?: boolean;
   };
 
   const artistId = body.artistId ?? session.artistId;
@@ -64,18 +88,24 @@ export async function POST(req: NextRequest) {
   const existing = await getUserOpportunities(session.email);
   const existingTitles = new Set(existing.map(o => o.title.toLowerCase()));
 
+  // Determine which types to surface this scan (rotate away from recently seen)
+  const recentTypes = await getRecentTypes(session.email);
+  const targetTypes = pickTargetTypes(recentTypes, body.targetTypes);
+
   let opportunities: ScannedOpportunity[] = [];
 
-  // Try Brave search first
   const hasBrave = !!process.env.BRAVE_API_KEY;
 
   if (hasBrave) {
-    const searches = [
-      { type: "festival" as OpportunityType, query: `${primaryGenre} music festival open submissions 2026` },
-      { type: "playlist" as OpportunityType, query: `${primaryGenre} playlist curator submissions SubmitHub 2026` },
-      { type: "press" as OpportunityType, query: `${primaryGenre} music blog interview submissions independent artists 2026` },
-      { type: "sync" as OpportunityType, query: `${primaryGenre} sync licensing music supervisors submissions 2026` },
-    ];
+    const typeQueries: Record<OpportunityType, string> = {
+      festival:      `${primaryGenre} music festival open submissions 2026`,
+      playlist:      `${primaryGenre} playlist curator submissions SubmitHub 2026`,
+      press:         `${primaryGenre} music blog interview submissions independent artists 2026`,
+      sync:          `${primaryGenre} sync licensing music supervisors submissions 2026`,
+      tiktok_growth: `${primaryGenre} TikTok music promotion strategy independent artists 2026`,
+    };
+
+    const searches = targetTypes.map(type => ({ type, query: typeQueries[type] }));
 
     const searchResults = await Promise.all(
       searches.map(async ({ type, query }) => ({ type, results: await braveSearch(query) })),
@@ -123,7 +153,10 @@ Return a JSON array only, no other text:
 
   // Fallback: use Claude's knowledge to generate opportunities
   if (opportunities.length === 0) {
+    const typesHint = targetTypes.join(", ");
     const prompt = `You are a music industry expert. Generate 4-5 realistic, actionable opportunities for the artist "${artistName}" (genres: ${genres.join(", ")}, monthly listeners: ${monthlyListeners.toLocaleString()}).
+
+Focus on these opportunity types this scan (rotate variety): ${typesHint}
 
 Include a mix of these types (use the exact string values):
 - "festival": Music festivals accepting submissions
@@ -159,7 +192,7 @@ Return a JSON array only:
     }
   }
 
-  // Filter duplicates and save
+  // Filter duplicates, save, cap at 5
   const now = new Date().toISOString();
   const saved: OpportunityTask[] = [];
 
@@ -185,6 +218,13 @@ Return a JSON array only:
     await saveOpportunity(task);
     saved.push(task);
   }
+
+  // Record which types were surfaced + update last scan time
+  if (saved.length > 0) {
+    const surfacedTypes = [...new Set(saved.map(t => t.type))];
+    await recordSurfacedTypes(session.email, surfacedTypes);
+  }
+  await setLastScanTime(session.email, Date.now());
 
   return new Response(JSON.stringify({ tasks: saved, count: saved.length }), {
     headers: { "Content-Type": "application/json" },

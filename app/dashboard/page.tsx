@@ -809,7 +809,7 @@ function HelmChat({
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({
-  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming,
+  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, onNewOpportunityCount,
 }: {
   artistData: ArtistData;
   analysis: AnalysisResult;
@@ -820,6 +820,7 @@ function OverviewTab({
   onRoyaltyAudit: () => void;
   chatMessages: ChatMessage[];
   isChatStreaming: boolean;
+  onNewOpportunityCount?: (count: number) => void;
 }) {
   const stage = analysis.careerStage || "Emerging";
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
@@ -971,6 +972,7 @@ function OverviewTab({
           artistName={artistData.name}
           genres={artistData.genres ?? []}
           monthlyListeners={typeof artistData.monthlyListeners === "number" ? artistData.monthlyListeners : 0}
+          onNewCount={onNewOpportunityCount}
         />
       </div>
 
@@ -1712,6 +1714,9 @@ function DashboardContent() {
   // Paid media modal
   const [showPaidMedia, setShowPaidMedia] = useState(false);
 
+  // Opportunity count badge
+  const [opportunityCount, setOpportunityCount] = useState(0);
+
   // Check paid status on load
   useEffect(() => {
     fetch("/api/auth/session")
@@ -2073,13 +2078,18 @@ function DashboardContent() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors ${
                   activeTab === tab.id
                     ? "text-white bg-[#111] border-t border-l border-r border-[#1e1e1e] -mb-px"
                     : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
                 {tab.label}
+                {tab.id === "overview" && opportunityCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold bg-[#6366f1] text-white">
+                    {opportunityCount}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -2118,6 +2128,7 @@ function DashboardContent() {
             onRoyaltyAudit={handleRoyaltyAudit}
             chatMessages={chatMessages}
             isChatStreaming={isChatStreaming}
+            onNewOpportunityCount={setOpportunityCount}
           />
         )}
         {mode !== "queue" && activeTab === "works" && (

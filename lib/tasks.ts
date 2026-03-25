@@ -1,5 +1,5 @@
-import { kvGet, kvSet, kvLpush, kvLrange, kvLpop, kvAvailable } from "./kv";
-import type { OpportunityTask, OpportunityStatus } from "./types";
+import { kvGet, kvSet, kvLpush, kvLrange, kvLpop, kvAvailable, kvKeys } from "./kv";
+import type { OpportunityTask, OpportunityStatus, OpportunityType } from "./types";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -283,6 +283,44 @@ export async function updateOpportunity(id: string, patch: Partial<OpportunityTa
   const updated = { ...existing, ...patch, updatedAt: new Date().toISOString() };
   await kvSet(opportunityKey(id), updated, 60 * 60 * 24 * 90);
   return updated;
+}
+
+// ─── SCAN STATE HELPERS ───────────────────────────────────────────────────────
+
+function lastScanKey(userEmail: string) { return `helm:user:${userEmail}:last_scan`; }
+function recentTypesKey(userEmail: string) { return `helm:user:${userEmail}:recent_types`; }
+
+export async function getLastScanTime(userEmail: string): Promise<number | null> {
+  if (!kvAvailable()) return null;
+  return kvGet<number>(lastScanKey(userEmail));
+}
+
+export async function setLastScanTime(userEmail: string, timestamp: number): Promise<void> {
+  if (!kvAvailable()) return;
+  await kvSet(lastScanKey(userEmail), timestamp, 60 * 60 * 24 * 7); // 7 day TTL
+}
+
+export async function getRecentTypes(userEmail: string): Promise<OpportunityType[]> {
+  if (!kvAvailable()) return [];
+  return (await kvGet<OpportunityType[]>(recentTypesKey(userEmail))) ?? [];
+}
+
+export async function recordSurfacedTypes(userEmail: string, types: OpportunityType[]): Promise<void> {
+  if (!kvAvailable()) return;
+  const existing = await getRecentTypes(userEmail);
+  // Keep only last 5 unique types, prepend new ones
+  const combined = [...types, ...existing];
+  const deduped = combined.filter((t, i) => combined.indexOf(t) === i).slice(0, 5);
+  await kvSet(recentTypesKey(userEmail), deduped, 60 * 60 * 48); // 48h TTL
+}
+
+export async function getUserEmailsWithOpportunities(): Promise<string[]> {
+  if (!kvAvailable()) return [];
+  const keys = await kvKeys("helm:user:*:opportunities");
+  return keys.map(k => {
+    const match = k.match(/^helm:user:(.+):opportunities$/);
+    return match ? match[1] : null;
+  }).filter(Boolean) as string[];
 }
 
 // ─── MOCK DATA (when KV not configured) ───────────────────────────────────────

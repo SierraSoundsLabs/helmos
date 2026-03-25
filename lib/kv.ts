@@ -131,6 +131,16 @@ export async function kvLpop<T>(key: string): Promise<T | null> {
   try { return JSON.parse(data.result) as T; } catch { return data.result as T; }
 }
 
+export async function kvKeys(pattern: string): Promise<string[]> {
+  if (isMemMode()) {
+    // In-memory: filter keys by simple glob pattern (only * wildcard)
+    const regex = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+    return Array.from(memStore.keys()).filter(k => regex.test(k));
+  }
+  const data = await kvFetch(`/keys/${encodeURIComponent(pattern)}`);
+  return data.result ?? [];
+}
+
 export function kvAvailable(): boolean {
   return true; // always available — uses in-memory fallback when env vars not set
 }

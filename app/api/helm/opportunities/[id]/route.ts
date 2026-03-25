@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSession } from "@/lib/session";
-import { getOpportunity, updateOpportunity } from "@/lib/tasks";
+import { getOpportunity, updateOpportunity, getUserOpportunities } from "@/lib/tasks";
 import type { OpportunityStatus } from "@/lib/types";
 
 export async function PATCH(
@@ -39,6 +39,29 @@ export async function PATCH(
   }
 
   const updated = await updateOpportunity(id, { status: body.status });
+
+  // Auto-replenish: if new queue drops to ≤ 2, fire background scan
+  if (body.status === "approved" || body.status === "dismissed") {
+    const remaining = await getUserOpportunities(session.email, "new");
+    if (remaining.length <= 2) {
+      // Fire-and-forget — don't await, don't block response
+      const baseUrl = req.headers.get("origin") ?? `https://${req.headers.get("host")}`;
+      fetch(`${baseUrl}/api/helm/opportunities/scan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Forward cookies so session is valid in the background scan
+          Cookie: req.headers.get("cookie") ?? "",
+        },
+        body: JSON.stringify({
+          artistId: existing.artistId,
+          artistName: existing.artistName,
+        }),
+      }).catch(() => {
+        // Silent fail — this is background, best-effort
+      });
+    }
+  }
 
   return new Response(JSON.stringify({ opportunity: updated }), {
     headers: { "Content-Type": "application/json" },
