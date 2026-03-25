@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PRICE_ID = "price_1TEZNKAq0rXznfHsTI2kXoVX"; // Helmos Pro $19/mo — Sierra Sounds LLC
+const PRICE_ID = process.env.STRIPE_PRO_PRICE_ID || "price_1TEhpZAq0rXznfHsHbKsyttZ"; // Helmos Pro $29/mo
 const BASE_URL = "https://helmos.co";
 
 export async function POST(req: NextRequest) {
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     cancel_url: `${BASE_URL}/dashboard?artist=${artistId}`,
     "metadata[artist_id]": artistId,
     allow_promotion_codes: "true",
-    "subscription_data[trial_period_days]": "7",
+    "subscription_data[trial_period_days]": "3",
   });
 
   const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {

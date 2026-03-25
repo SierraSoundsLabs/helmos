@@ -5,7 +5,7 @@ export interface HelmSession {
   email: string;
   artistId: string;
   customerId: string;
-  plan: "heatseeker";
+  plan: "pro";
   exp: number;
   paid: boolean;
 }
@@ -37,7 +37,7 @@ export function decodeSession(token: string): HelmSession | null {
     if (sign(encoded) !== sig) return null;
     const data = JSON.parse(Buffer.from(encoded, "base64url").toString("utf-8"));
     if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
-    return { ...data, paid: data.plan === "heatseeker" } as HelmSession;
+    return { ...data, paid: data.plan === "pro" } as HelmSession;
   } catch {
     return null;
   }

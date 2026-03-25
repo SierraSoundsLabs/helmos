@@ -188,7 +188,7 @@ function HomeContent() {
 
           {/* Social proof */}
           <p className="text-xs text-zinc-600">
-            Free · No account required · Try 3 days free · $49/mo AI Artist Manager
+            Free · No account required · Try 3 days free · $29/mo Helmos Pro
           </p>
 
           {/* ── MAGIC LINK LOGIN ── */}

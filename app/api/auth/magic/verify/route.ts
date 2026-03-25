@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       email: data.email,
       artistId: data.artistId,
       customerId: data.customerId,
-      plan: "heatseeker",
+      plan: "pro",
     });
 
     const cookieStore = await cookies();

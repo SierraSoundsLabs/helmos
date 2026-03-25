@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Re-issue session cookie
-    const token = encodeSession({ email, artistId, customerId, plan: "heatseeker" });
+    const token = encodeSession({ email, artistId, customerId, plan: "pro" });
     const cookieStore = await cookies();
     cookieStore.set(COOKIE_NAME, token, {
       httpOnly: true,

@@ -13,7 +13,7 @@ import type { InboundEmail } from "@/app/api/helm/outreach/webhook/route";
 import { toSlug, artistEmail } from "@/lib/email";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const STRIPE_PRICE = "price_1T9CqJACiFFf49dvYHMObuOd";
+const STRIPE_PRICE = "price_1TEhpZAq0rXznfHsHbKsyttZ"; // Helmos Pro $29/mo
 
 const CATEGORY_COLORS: Record<string, string> = {
   Royalties:   "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",

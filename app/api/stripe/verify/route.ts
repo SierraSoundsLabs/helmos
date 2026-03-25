@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     typeof session.customer === "string" ? session.customer : session.customer?.id || "";
   const verifiedArtistId = session.metadata?.artist_id || artistId || "";
 
-  const token = encodeSession({ email, artistId: verifiedArtistId, customerId, plan: "heatseeker" });
+  const token = encodeSession({ email, artistId: verifiedArtistId, customerId, plan: "pro" });
 
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, token, {
