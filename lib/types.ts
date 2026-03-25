@@ -19,6 +19,24 @@ export interface OneSheetData {
   createdAt: string;
 }
 
+export type OpportunityType = "festival" | "playlist" | "press" | "tiktok_growth" | "sync";
+export type OpportunityStatus = "new" | "approved" | "done" | "dismissed";
+
+export interface OpportunityTask {
+  id: string;
+  userEmail: string;
+  artistId: string;
+  artistName: string;
+  type: OpportunityType;
+  title: string;
+  description: string;
+  actionUrl?: string;
+  deadline?: string;
+  status: OpportunityStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export function artistSlug(name: string): string {
   return name
     .toLowerCase()

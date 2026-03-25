@@ -6,6 +6,7 @@ import type { ArtistData } from "@/lib/spotify";
 import type { Release } from "@/lib/spotify";
 import type { AnalysisResult } from "@/lib/claude";
 import QueueDashboard from "@/components/QueueDashboard";
+import OpportunityFeed from "@/components/OpportunityFeed";
 import type { OutreachDraft } from "@/app/api/helm/outreach/generate/route";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import type { InboundEmail } from "@/app/api/helm/outreach/webhook/route";
@@ -963,6 +964,14 @@ function OverviewTab({
             </button>
           </div>
         </div>
+
+        {/* Opportunities */}
+        <OpportunityFeed
+          artistId={artistData.id}
+          artistName={artistData.name}
+          genres={artistData.genres ?? []}
+          monthlyListeners={typeof artistData.monthlyListeners === "number" ? artistData.monthlyListeners : 0}
+        />
       </div>
 
       {/* Right: Helm Agent panel */}

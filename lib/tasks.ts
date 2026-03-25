@@ -1,4 +1,5 @@
 import { kvGet, kvSet, kvLpush, kvLrange, kvLpop, kvAvailable } from "./kv";
+import type { OpportunityTask, OpportunityStatus } from "./types";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -240,6 +241,48 @@ export async function saveKnowledge(category: string, genre: string, content: st
   const existing = await kvGet<string>(key) ?? "";
   const merged = existing ? `${existing}\n\n---\n\n${content}` : content;
   await kvSet(key, merged.slice(-8000), 60 * 60 * 24 * 365); // keep 8k chars, 1 year
+}
+
+// ─── OPPORTUNITY TASKS ────────────────────────────────────────────────────────
+
+function opportunityKey(id: string) { return `helm:opportunity:${id}`; }
+function userOpportunitiesKey(userEmail: string) { return `helm:user:${userEmail}:opportunities`; }
+
+export async function saveOpportunity(opp: OpportunityTask): Promise<void> {
+  if (!kvAvailable()) return;
+  await kvSet(opportunityKey(opp.id), opp, 60 * 60 * 24 * 90);
+  const ids = await kvGet<string[]>(userOpportunitiesKey(opp.userEmail)) ?? [];
+  if (!ids.includes(opp.id)) {
+    ids.unshift(opp.id);
+    await kvSet(userOpportunitiesKey(opp.userEmail), ids, 60 * 60 * 24 * 90);
+  }
+}
+
+export async function getUserOpportunities(
+  userEmail: string,
+  status?: OpportunityStatus,
+): Promise<OpportunityTask[]> {
+  if (!kvAvailable()) return [];
+  const ids = await kvGet<string[]>(userOpportunitiesKey(userEmail)) ?? [];
+  if (!ids.length) return [];
+  const items = await Promise.all(ids.map(id => kvGet<OpportunityTask>(opportunityKey(id))));
+  const valid = items.filter(Boolean) as OpportunityTask[];
+  if (status) return valid.filter(o => o.status === status);
+  return valid;
+}
+
+export async function getOpportunity(id: string): Promise<OpportunityTask | null> {
+  if (!kvAvailable()) return null;
+  return kvGet<OpportunityTask>(opportunityKey(id));
+}
+
+export async function updateOpportunity(id: string, patch: Partial<OpportunityTask>): Promise<OpportunityTask | null> {
+  if (!kvAvailable()) return null;
+  const existing = await kvGet<OpportunityTask>(opportunityKey(id));
+  if (!existing) return null;
+  const updated = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+  await kvSet(opportunityKey(id), updated, 60 * 60 * 24 * 90);
+  return updated;
 }
 
 // ─── MOCK DATA (when KV not configured) ───────────────────────────────────────
