@@ -5,8 +5,10 @@ export interface OneSheetData {
   bio: string;
   photoUrl: string;
   genres: string[];
+  location?: string;
   monthlyListeners: number;
-  topTracks: { name: string; spotifyUrl: string; albumArt: string }[];
+  spotifyFollowers?: number;
+  topTracks: { name: string; spotifyUrl: string; albumArt: string; streams?: number }[];
   latestRelease: { name: string; date: string; albumArt: string; spotifyUrl: string } | null;
   socialLinks: {
     spotify?: string;
@@ -15,6 +17,7 @@ export interface OneSheetData {
     youtube?: string;
     website?: string;
   };
+  pressQuotes?: string[];
   bookingEmail?: string;
   createdAt: string;
 }

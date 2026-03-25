@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, Suspense } from "react";
+import React, { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { ArtistData } from "@/lib/spotify";
 import type { Release } from "@/lib/spotify";
@@ -1203,6 +1203,7 @@ function LinksTab({
   const slug = artistSlugFromName(artist.name);
   const linksUrl = `https://helmos.co/links/${slug}`;
   const onesheetUrl = `https://helmos.co/${slug}`;
+  const onesheetPrintUrl = `https://helmos.co/one-sheet/${slug}`;
 
   // Check if one-sheet is published
   useEffect(() => {
@@ -1274,7 +1275,7 @@ function LinksTab({
             <div className="flex items-center gap-2 p-3 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg mb-3">
               <span className="text-xs text-zinc-400 flex-1 truncate">{onesheetUrl}</span>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 mb-2">
               <button
                 onClick={() => copyToClipboard(onesheetUrl, "onesheet")}
                 className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
@@ -1292,6 +1293,14 @@ function LinksTab({
                 View →
               </a>
             </div>
+            <a
+              href={onesheetPrintUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-semibold bg-[#8b5cf6]/15 text-[#a78bfa] hover:bg-[#8b5cf6]/25 transition-colors border border-[#8b5cf6]/20"
+            >
+              ✅ One-sheet ready — View &amp; Download PDF →
+            </a>
           </>
         ) : (
           <div className="flex flex-col gap-3">
@@ -1686,6 +1695,336 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
   );
 }
 
+// ─── AI TOOLS TAB ─────────────────────────────────────────────────────────────
+interface AITool {
+  id: string;
+  icon: string;
+  name: string;
+  description: string;
+  credits: number;
+  buttonLabel: string;
+  endpoint: string;
+  buildBody: (artistId: string) => Record<string, unknown>;
+  renderResult: (data: Record<string, unknown>) => React.ReactNode;
+}
+
+function AIToolCard({
+  tool,
+  artistId,
+}: {
+  tool: AITool;
+  artistId: string;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(true);
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch(tool.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tool.buildBody(artistId)),
+      });
+      const data = await res.json() as Record<string, unknown>;
+      if (!res.ok) {
+        setError((data.error as string) ?? "Something went wrong");
+      } else {
+        setResult(data);
+        setExpanded(true);
+      }
+    } catch {
+      setError("Request failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5 flex flex-col gap-4">
+      <div className="flex items-start gap-3">
+        <span className="text-2xl leading-none mt-0.5">{tool.icon}</span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-semibold text-white">{tool.name}</h3>
+          <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">{tool.description}</p>
+          <span className="inline-block mt-2 text-[10px] text-zinc-600 bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5">
+            {tool.credits} credits
+          </span>
+        </div>
+      </div>
+
+      <button
+        onClick={handleGenerate}
+        disabled={loading}
+        className="w-full py-2 px-4 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+      >
+        {loading ? (
+          <>
+            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            Generating…
+          </>
+        ) : (
+          tool.buttonLabel
+        )}
+      </button>
+
+      {error && (
+        <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
+      )}
+
+      {result && (
+        <div className="border-t border-[#1e1e1e] pt-3">
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors mb-3"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            {expanded ? "Hide result" : "Show result"}
+          </button>
+          {expanded && (
+            <div className="text-xs text-zinc-300 leading-relaxed">
+              {tool.renderResult(result)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AIToolsTab({ artist }: { artist: ArtistData }) {
+  const AI_TOOLS: AITool[] = [
+    {
+      id: "spotify-pitch",
+      icon: "🎵",
+      name: "Spotify Editorial Pitch",
+      description: "Write a Spotify for Artists editorial pitch in your voice. Under 500 characters — ready to paste.",
+      credits: 10,
+      buttonLabel: "Generate Pitch →",
+      endpoint: "/api/helm/spotify-pitch",
+      buildBody: (artistId) => ({ artistId }),
+      renderResult: (data) => {
+        const pitch = data.pitch as string;
+        const count = data.characterCount as number;
+        const tips = data.tips as string[];
+        return (
+          <div className="space-y-3">
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+              <p className="text-zinc-200 leading-relaxed">{pitch}</p>
+              <p className={`text-[10px] mt-2 ${count > 480 ? "text-amber-400" : "text-zinc-500"}`}>
+                {count}/500 characters
+              </p>
+            </div>
+            {tips && tips.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Tips</p>
+                <ul className="space-y-1">
+                  {tips.map((tip, i) => (
+                    <li key={i} className="flex gap-2 text-zinc-400">
+                      <span className="text-zinc-600 flex-shrink-0">·</span>
+                      {tip}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: "press-release",
+      icon: "📰",
+      name: "Press Release",
+      description: "Full press release for your next release, tour announcement, or career milestone.",
+      credits: 5,
+      buttonLabel: "Generate Press Release →",
+      endpoint: "/api/helm/press-release",
+      buildBody: (artistId) => ({
+        artistId,
+        type: "release",
+        details: "New music release — add specific details in the API call for best results.",
+      }),
+      renderResult: (data) => {
+        const pr = data.pressRelease as string;
+        const subject = data.subject as string;
+        return (
+          <div className="space-y-3">
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+              <p className="text-[10px] text-zinc-500 mb-1">Suggested subject line:</p>
+              <p className="text-zinc-300 font-medium">{subject}</p>
+            </div>
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+              <pre className="whitespace-pre-wrap text-zinc-300 font-sans leading-relaxed">{pr}</pre>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: "epk",
+      icon: "📋",
+      name: "EPK Builder",
+      description: "Full electronic press kit — short bio, long bio, artist statement, top tracks. Shareable public page included.",
+      credits: 12,
+      buttonLabel: "Build EPK →",
+      endpoint: "/api/helm/epk",
+      buildBody: (artistId) => ({ artistId }),
+      renderResult: (data) => {
+        const shortBio = data.shortBio as string;
+        const publicUrl = data.publicUrl as string | undefined;
+        const artistSlug = data.artistSlug as string | undefined;
+        return (
+          <div className="space-y-3">
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+              <p className="text-[10px] text-zinc-500 mb-1">Short Bio</p>
+              <p className="text-zinc-300 leading-relaxed">{shortBio}</p>
+            </div>
+            {publicUrl && (
+              <a
+                href={publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors font-medium"
+              >
+                View Public EPK Page →
+                {artistSlug && <span className="text-zinc-500 font-normal">helmos.co/epk/{artistSlug}</span>}
+              </a>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: "tiktok-strategy",
+      icon: "📱",
+      name: "TikTok Strategy",
+      description: "30-day content plan, hook ideas for your top track, and TikTok trends to jump on right now.",
+      credits: 8,
+      buttonLabel: "Get Strategy →",
+      endpoint: "/api/helm/tiktok-strategy",
+      buildBody: (artistId) => ({ artistId }),
+      renderResult: (data) => {
+        const analysis = data.trackAnalysis as string;
+        const hooks = data.hookIdeas as string[];
+        const trends = data.trendOpportunities as string[];
+        return (
+          <div className="space-y-4">
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Track Analysis</p>
+              <p className="text-zinc-300 leading-relaxed">{analysis}</p>
+            </div>
+            {hooks && hooks.length > 0 && (
+              <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Hook Ideas (First 3 Seconds)</p>
+                <ol className="space-y-2">
+                  {hooks.map((hook, i) => (
+                    <li key={i} className="flex gap-2 text-zinc-300">
+                      <span className="text-zinc-600 flex-shrink-0 font-mono">{i + 1}.</span>
+                      {hook}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            {trends && trends.length > 0 && (
+              <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Trends to Jump On</p>
+                <ul className="space-y-2">
+                  {trends.map((trend, i) => (
+                    <li key={i} className="flex gap-2 text-zinc-400">
+                      <span className="text-zinc-600 flex-shrink-0">·</span>
+                      {trend}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: "growth-report",
+      icon: "📊",
+      name: "Monthly Growth Report",
+      description: "Plain-English summary of your growth this month with 3 specific next steps. Sent to your email.",
+      credits: 3,
+      buttonLabel: "Run Report →",
+      endpoint: "/api/helm/growth-report",
+      buildBody: (artistId) => ({ artistId }),
+      renderResult: (data) => {
+        const report = data.report as string;
+        const stats = data.stats as Record<string, unknown>;
+        const emailSent = data.emailSent as boolean;
+        return (
+          <div className="space-y-3">
+            {stats && (
+              <div className="flex gap-4 text-center">
+                <div className="flex-1 bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+                  <div className="text-base font-bold text-white">{String(stats.monthlyListenersFormatted ?? "")}</div>
+                  <div className="text-[10px] text-zinc-500">Monthly Listeners</div>
+                  {!!stats.listenerChange && (
+                    <div className={`text-[10px] font-medium ${String(stats.listenerChange).startsWith("+") ? "text-emerald-400" : "text-red-400"}`}>
+                      {String(stats.listenerChange)}
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+                  <div className="text-base font-bold text-white">{String(stats.followersFormatted ?? "")}</div>
+                  <div className="text-[10px] text-zinc-500">Followers</div>
+                  {!!stats.followerChange && (
+                    <div className={`text-[10px] font-medium ${String(stats.followerChange).startsWith("+") ? "text-emerald-400" : "text-red-400"}`}>
+                      {String(stats.followerChange)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
+              <pre className="whitespace-pre-wrap text-zinc-300 font-sans leading-relaxed">{report}</pre>
+            </div>
+            {emailSent && (
+              <p className="text-[10px] text-emerald-400">Report sent to your email.</p>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
+  return (
+    <div className="max-w-4xl">
+      <div className="mb-6">
+        <h2 className="text-base font-semibold text-white">AI Growth Tools</h2>
+        <p className="text-xs text-zinc-500 mt-0.5">Generate press materials, strategy, and reports powered by AI.</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {AI_TOOLS.map((tool) => (
+          <AIToolCard key={tool.id} tool={tool} artistId={artist.id} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN DASHBOARD ────────────────────────────────────────────────────────────
 function DashboardContent() {
   const searchParams = useSearchParams();
@@ -1697,7 +2036,7 @@ function DashboardContent() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [phase, setPhase] = useState<"loading-artist" | "loading-analysis" | "done" | "error">("loading-artist");
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools">("overview");
 
   // Auth / paid state
   const [isPaid, setIsPaid] = useState(false);
@@ -1964,11 +2303,12 @@ function DashboardContent() {
   }
 
   const TABS = [
-    { id: "overview", label: "Overview" },
-    { id: "works",    label: `Works & Recordings (${artistData.allReleases.length})` },
-    { id: "release",  label: "Release Marketing" },
-    { id: "links",    label: "🔗 Links" },
+    { id: "overview",  label: "Overview" },
+    { id: "works",     label: `Works & Recordings (${artistData.allReleases.length})` },
+    { id: "release",   label: "Release Marketing" },
+    { id: "links",     label: "🔗 Links" },
     { id: "outreach",  label: "📧 Outreach" },
+    { id: "ai-tools",  label: "✨ AI Tools" },
   ] as const;
 
   return (
@@ -2171,6 +2511,9 @@ function DashboardContent() {
             isPaid={isPaid}
             onSubscribe={handleSubscribe}
           />
+        )}
+        {mode !== "queue" && activeTab === "ai-tools" && (
+          <AIToolsTab artist={artistData} />
         )}
       </div>
 
