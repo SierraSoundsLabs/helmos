@@ -2056,6 +2056,9 @@ function DashboardContent() {
   // Opportunity count badge
   const [opportunityCount, setOpportunityCount] = useState(0);
 
+  // Agent task status banner (for returning users)
+  const [agentBanner, setAgentBanner] = useState<{ pending: number; running: number; completed: number; total: number } | null>(null);
+
   // Check paid status on load
   useEffect(() => {
     fetch("/api/auth/session")
@@ -2063,6 +2066,24 @@ function DashboardContent() {
       .then(d => { if (d.authenticated) setIsPaid(true); })
       .catch(() => {});
   }, []);
+
+  // Fetch agent task status for returning users — show banner if work is in progress
+  useEffect(() => {
+    if (!artistId || !isPaid || mode === "queue") return;
+    fetch(`/api/tasks?artist=${artistId}`)
+      .then(r => r.json())
+      .then(d => {
+        const tasks: { status: string }[] = d.tasks ?? [];
+        if (!tasks.length) return;
+        const pending = tasks.filter(t => t.status === "pending").length;
+        const running = tasks.filter(t => t.status === "running").length;
+        const completed = tasks.filter(t => t.status === "completed").length;
+        const total = tasks.length;
+        // Show banner only if work is incomplete
+        if (pending + running > 0) setAgentBanner({ pending, running, completed, total });
+      })
+      .catch(() => {});
+  }, [artistId, isPaid, mode]);
 
   // Subscribe handler — creates Stripe Checkout Session
   const handleSubscribe = useCallback(async () => {
@@ -2075,8 +2096,13 @@ function DashboardContent() {
         body: JSON.stringify({ artistId }),
       });
       const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else console.error("No checkout URL", data);
+      if (data.claimed) {
+        alert("This artist already has a Helm account. Please sign in instead.");
+      } else if (data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error("No checkout URL", data);
+      }
     } catch (e) {
       console.error("Checkout error", e);
     } finally {
@@ -2445,6 +2471,32 @@ function DashboardContent() {
           </div>
         </div>
       </div>
+
+      {/* Agent status banner — shown to returning users with work in progress */}
+      {agentBanner && mode !== "queue" && (
+        <div className="border-b border-[#6366f1]/20 bg-[#6366f1]/5">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="flex gap-1">
+                {[0,1,2].map(i => (
+                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#6366f1]"
+                    style={{ animation: `pulse 1.2s ease-in-out ${i*0.3}s infinite` }} />
+                ))}
+              </div>
+              <span className="text-xs text-[#818cf8] font-medium">
+                Helm is working — {agentBanner.completed}/{agentBanner.total} tasks complete
+                {agentBanner.running > 0 && ` · ${agentBanner.running} agent running now`}
+              </span>
+            </div>
+            <button
+              onClick={() => { const url = new URL(window.location.href); url.searchParams.set("mode", "queue"); window.history.pushState({}, "", url.toString()); window.location.reload(); }}
+              className="text-[11px] font-semibold text-[#6366f1] hover:text-[#818cf8] transition-colors shrink-0"
+            >
+              View progress →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tab content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">

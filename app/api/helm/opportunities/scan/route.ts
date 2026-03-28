@@ -192,13 +192,46 @@ Return a JSON array only:
     }
   }
 
+  // Validate that a URL is reachable (HEAD request, 3s timeout)
+  async function isUrlReachable(url: string): Promise<boolean> {
+    if (!url) return false;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(url, { method: "HEAD", redirect: "follow", signal: controller.signal });
+      clearTimeout(timer);
+      return res.status < 400;
+    } catch {
+      // Try GET as fallback (some servers reject HEAD)
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(url, { method: "GET", redirect: "follow", signal: controller.signal });
+        clearTimeout(timer);
+        return res.status < 400;
+      } catch {
+        return false;
+      }
+    }
+  }
+
   // Filter duplicates, save, cap at 5
   const now = new Date().toISOString();
   const saved: OpportunityTask[] = [];
 
-  for (const opp of opportunities.slice(0, 5)) {
+  for (const opp of opportunities.slice(0, 8)) { // Check more candidates since some may be dead
     if (!opp.title || !opp.description) continue;
     if (existingTitles.has(opp.title.toLowerCase())) continue;
+    if (saved.length >= 5) break;
+
+    // Skip opportunities with dead or unreachable links
+    if (opp.actionUrl) {
+      const reachable = await isUrlReachable(opp.actionUrl);
+      if (!reachable) {
+        console.log(`[opp] Skipping dead URL: ${opp.actionUrl}`);
+        continue; // Drop this opportunity — a broken link is worse than no opportunity
+      }
+    }
 
     const task: OpportunityTask = {
       id: generateId(),

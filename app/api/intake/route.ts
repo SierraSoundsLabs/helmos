@@ -59,6 +59,9 @@ export async function POST(req: NextRequest) {
     await kvSet(`helm:email_artist:${userEmail.toLowerCase()}`, artistId, 60 * 60 * 24 * 365);
   }
 
+  // Lock this artist to this account — no one else can create an account for them
+  await kvSet(`helm:artist_claimed:${artistId}`, true, 60 * 60 * 24 * 365 * 5);
+
   const taskTypes = buildTaskList(goals, hasRelease);
   const tasks = await createTasks(profile, taskTypes);
 
