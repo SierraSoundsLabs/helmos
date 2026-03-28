@@ -2097,7 +2097,7 @@ function DashboardContent() {
       });
       const data = await res.json();
       if (data.claimed) {
-        alert("This artist already has a Helm account. Please sign in instead.");
+        window.location.href = "/login";
       } else if (data.url) {
         window.location.href = data.url;
       } else {
@@ -2401,6 +2401,12 @@ function DashboardContent() {
             ) : (
               <>
                 <span className="hidden sm:block text-xs text-zinc-500 max-w-[240px] truncate">{analysis.topOpportunity}</span>
+                <a
+                  href="/login"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 border border-[#1e1e1e] hover:border-[#2e2e2e] transition-colors"
+                >
+                  Sign In
+                </a>
                 <button
                   onClick={handleSubscribe}
                   disabled={isSubscribing}
