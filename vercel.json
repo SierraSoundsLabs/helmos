@@ -1,11 +1,16 @@
 {
   "functions": {
-    "app/api/helm/royalty-audit/route.ts": { "maxDuration": 60 }
+    "app/api/helm/royalty-audit/route.ts": { "maxDuration": 60 },
+    "app/api/agent/run/route.ts": { "maxDuration": 60 }
   },
   "crons": [
     {
       "path": "/api/cron/opportunities",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/agent/run",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
