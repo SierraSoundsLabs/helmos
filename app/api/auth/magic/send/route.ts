@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
     await sendEmail({
       to: email,
-      from: "onboarding@resend.dev",
+      from: "signin@helmos.co",
       subject: "Your Helmos login link",
       html: `
         <!DOCTYPE html>
