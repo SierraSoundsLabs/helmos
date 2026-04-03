@@ -56,6 +56,11 @@ export async function POST(req: NextRequest) {
       status: 401, headers: { "Content-Type": "application/json" },
     });
   }
+  if (!session.paid) {
+    return new Response(JSON.stringify({ error: "Subscription required" }), {
+      status: 403, headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const { messages, artistContext } = await req.json();
   if (!Array.isArray(messages) || messages.length === 0) {

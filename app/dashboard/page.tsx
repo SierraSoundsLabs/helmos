@@ -2113,6 +2113,7 @@ function DashboardContent() {
   // Chat handler — streams from Claude
   const handleSendChat = useCallback(async (text: string) => {
     if (!artistData || isChatStreaming) return;
+    if (!isPaid) { handleSubscribe(); return; }
 
     // Switch to overview tab so user can see the chat
     setActiveTab("overview");
@@ -2180,6 +2181,7 @@ function DashboardContent() {
   // Royalty audit handler — streams real database search results
   const handleRoyaltyAudit = useCallback(async () => {
     if (!artistData || isChatStreaming) return;
+    if (!isPaid) { handleSubscribe(); return; }
 
     setActiveTab("overview");
 
