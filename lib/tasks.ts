@@ -217,7 +217,7 @@ export async function queueNextTask(userId: string, tasks: Task[]): Promise<void
 
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
   if (!kvAvailable()) return;
-  await kvSet(userProfileKey(profile.userId), profile, 60 * 60 * 24 * 90);
+  await kvSet(userProfileKey(profile.userId), profile, 60 * 60 * 24 * 365); // 1 year TTL
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
