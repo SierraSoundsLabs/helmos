@@ -99,6 +99,108 @@ function DocModal({ content, title, onClose }: { content: string; title: string;
   );
 }
 
+// ─── SUBSCRIBE MODAL ──────────────────────────────────────────────────────────
+function SubscribeModal({
+  onClose,
+  onConfirm,
+  isSubscribing,
+  claimedArtist,
+}: {
+  onClose: () => void;
+  onConfirm: () => void;
+  isSubscribing: boolean;
+  claimedArtist: boolean;
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div
+        className="bg-[#0e0e0e] border border-[#2e2e2e] rounded-2xl p-6 max-w-sm w-full mx-4 relative shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors text-lg leading-none"
+        >
+          ✕
+        </button>
+
+        {claimedArtist ? (
+          <>
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] mb-5 mx-auto">
+              <span className="text-base font-bold text-white">H</span>
+            </div>
+            <h2 className="text-lg font-bold text-white text-center mb-2">
+              This Artist Already Has a Helm Account
+            </h2>
+            <p className="text-sm text-zinc-400 text-center mb-6">
+              Sign in to access your dashboard.
+            </p>
+            <a
+              href="/login"
+              className="block w-full text-center py-3 rounded-xl text-sm font-semibold text-white"
+              style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+            >
+              Sign In →
+            </a>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] mb-5 mx-auto">
+              <span className="text-base font-bold text-white">H</span>
+            </div>
+            <h2 className="text-lg font-bold text-white text-center mb-1">
+              Activate Your 3-Day Free Trial
+            </h2>
+            <p className="text-sm text-zinc-400 text-center mb-5">
+              No charge for 3 days. Then $29/mo. Cancel anytime.
+            </p>
+            <ul className="mb-6 space-y-2.5">
+              {[
+                "AI Artist Manager — always working in the background",
+                "Playlist pitch outreach — automated",
+                "One-sheets, EPKs, press releases — generated instantly",
+                "Royalty audit — find missing money",
+              ].map(item => (
+                <li key={item} className="flex items-start gap-2 text-xs text-zinc-300">
+                  <span className="mt-0.5 text-[#6366f1] shrink-0">✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={onConfirm}
+              disabled={isSubscribing}
+              className="w-full py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60 flex items-center justify-center gap-2"
+              style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+            >
+              {isSubscribing ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Loading…
+                </>
+              ) : (
+                "Start Free Trial →"
+              )}
+            </button>
+            <p className="text-[10px] text-zinc-600 text-center mt-3">
+              No credit card charge for 3 days · Cancel anytime
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── SPEND SELECTOR ───────────────────────────────────────────────────────────
 function SpendSelector({ onChange }: { onChange: (daily: number, days: number, total: number) => void }) {
   const [daily, setDaily] = useState(10);
@@ -1030,7 +1132,7 @@ function OverviewTab({
               >
                 Start 3-Day Free Trial →
               </button>
-              <p className="text-[10px] text-zinc-600 text-center -mt-1">$49/mo after trial · Cancel anytime</p>
+              <p className="text-[10px] text-zinc-600 text-center -mt-1">$29/mo after trial · Cancel anytime</p>
             </div>
           </div>
         )}
@@ -2041,6 +2143,8 @@ function DashboardContent() {
   // Auth / paid state
   const [isPaid, setIsPaid] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [showSubscribeModal, setShowSubscribeModal] = useState(false);
+  const [claimedArtist, setClaimedArtist] = useState(false);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -2085,8 +2189,13 @@ function DashboardContent() {
       .catch(() => {});
   }, [artistId, isPaid, mode]);
 
-  // Subscribe handler — creates Stripe Checkout Session
-  const handleSubscribe = useCallback(async () => {
+  // Subscribe handler — opens the paywall modal
+  const handleSubscribe = useCallback(() => {
+    setShowSubscribeModal(true);
+  }, []);
+
+  // Confirm subscribe — creates Stripe Checkout Session
+  const handleConfirmSubscribe = useCallback(async () => {
     if (!artistId || isSubscribing) return;
     setIsSubscribing(true);
     try {
@@ -2097,7 +2206,7 @@ function DashboardContent() {
       });
       const data = await res.json();
       if (data.claimed) {
-        window.location.href = "/login";
+        setClaimedArtist(true);
       } else if (data.url) {
         window.location.href = data.url;
       } else {
@@ -2414,7 +2523,7 @@ function DashboardContent() {
                   disabled={isSubscribing}
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors disabled:opacity-60"
                 >
-                  {isSubscribing ? "Loading…" : "Start Free Trial · $49/mo"}
+                  {isSubscribing ? "Loading…" : "Start Free Trial · $29/mo"}
                 </button>
               </>
             )}
@@ -2578,6 +2687,15 @@ function DashboardContent() {
       </div>
 
       <style>{`@keyframes bounce { 0%,80%,100%{transform:scale(.8);opacity:.5} 40%{transform:scale(1.2);opacity:1} }`}</style>
+
+      {showSubscribeModal && (
+        <SubscribeModal
+          onClose={() => { setShowSubscribeModal(false); setClaimedArtist(false); }}
+          onConfirm={handleConfirmSubscribe}
+          isSubscribing={isSubscribing}
+          claimedArtist={claimedArtist}
+        />
+      )}
     </div>
   );
 }
