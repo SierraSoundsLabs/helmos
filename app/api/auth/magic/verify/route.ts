@@ -54,21 +54,18 @@ export async function GET(req: NextRequest) {
 
     // Determine where to send the user:
     // - Paying subscribers (have customerId) → always go to dashboard
-    //   (they've already set up; intake is first-time only)
-    // - New subscribers with no profile yet → intake
+    //   (they've already completed intake; don't send back regardless of artistId)
+    // - New subscribers with artistId but no profile → intake
     // - No artistId at all → intake root
     let dashboardUrl = "/intake";
-    if (artistId) {
-      if (data.customerId) {
-        // Returning subscriber — skip intake, go straight to dashboard
-        dashboardUrl = `/dashboard?artist=${artistId}`;
-      } else {
-        // Check if they've completed intake (has a profile)
-        const profile = await kvGet<UserProfile>(`helm:user:${artistId}:profile`);
-        dashboardUrl = profile
-          ? `/dashboard?artist=${artistId}`
-          : `/intake?artist=${artistId}`;
-      }
+    if (data.customerId) {
+      // Returning subscriber — skip intake entirely
+      dashboardUrl = artistId ? `/dashboard?artist=${artistId}` : "/dashboard";
+    } else if (artistId) {
+      const profile = await kvGet<UserProfile>(`helm:user:${artistId}:profile`);
+      dashboardUrl = profile
+        ? `/dashboard?artist=${artistId}`
+        : `/intake?artist=${artistId}`;
     }
 
     return NextResponse.redirect(new URL(dashboardUrl, req.url));
