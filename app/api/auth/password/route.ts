@@ -71,14 +71,20 @@ async function buildSessionAndRedirect(
     sameSite: "lax",
   });
 
+  // Paying subscribers (have customerId) always go straight to dashboard —
+  // they've already completed intake. Only new/free users need intake.
   let redirect = "/intake";
   if (resolvedArtistId) {
-    const profile = await kvGet<UserProfile>(
-      `helm:user:${resolvedArtistId}:profile`
-    );
-    redirect = profile
-      ? `/dashboard?artist=${resolvedArtistId}`
-      : `/intake?artist=${resolvedArtistId}`;
+    if (customerId) {
+      redirect = `/dashboard?artist=${resolvedArtistId}`;
+    } else {
+      const profile = await kvGet<UserProfile>(
+        `helm:user:${resolvedArtistId}:profile`
+      );
+      redirect = profile
+        ? `/dashboard?artist=${resolvedArtistId}`
+        : `/intake?artist=${resolvedArtistId}`;
+    }
   }
 
   return NextResponse.json({ ok: true, artistId: resolvedArtistId, redirect });

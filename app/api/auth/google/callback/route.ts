@@ -119,14 +119,20 @@ export async function GET(req: NextRequest) {
     });
 
     // Redirect to dashboard or intake
+    // Paying subscribers (have customerId) always go straight to dashboard —
+    // they've already completed intake. Only new/free users need intake.
     let dashboardUrl = "/intake";
     if (artistId) {
-      const profile = await kvGet<UserProfile>(
-        `helm:user:${artistId}:profile`
-      );
-      dashboardUrl = profile
-        ? `/dashboard?artist=${artistId}`
-        : `/intake?artist=${artistId}`;
+      if (customer.customerId) {
+        dashboardUrl = `/dashboard?artist=${artistId}`;
+      } else {
+        const profile = await kvGet<UserProfile>(
+          `helm:user:${artistId}:profile`
+        );
+        dashboardUrl = profile
+          ? `/dashboard?artist=${artistId}`
+          : `/intake?artist=${artistId}`;
+      }
     }
 
     return NextResponse.redirect(new URL(dashboardUrl, req.url));
