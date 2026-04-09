@@ -816,38 +816,50 @@ function HelmChat({
   };
 
   return (
-    <div className="bg-[#111] border border-[#1e1e1e] rounded-xl flex flex-col h-[560px]">
+    <div className="bg-[#111] border border-[#1e1e1e] rounded-xl flex flex-col h-[640px]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e1e1e] shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center">
-            <span className="text-[10px] font-bold text-white">H</span>
+      <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#1e1e1e] shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center">
+            <span className="text-xs font-bold text-white">H</span>
           </div>
-          <span className="text-xs font-semibold text-white">Helm Agent</span>
+          <div>
+            <div className="text-sm font-semibold text-white leading-tight">Helm AI</div>
+            <div className="text-[10px] text-zinc-500 leading-tight">Your personal music manager</div>
+          </div>
         </div>
-        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">ACTIVE</span>
+        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">ONLINE</span>
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
         {messages.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 py-8">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center">
-              <span className="text-base font-bold text-white">H</span>
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-6">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <span className="text-lg font-bold text-white">H</span>
             </div>
-            <p className="text-xs text-zinc-400 text-center max-w-[200px]">
-              Your Helm agent is ready. Ask anything about {artistData.name}&apos;s career.
-            </p>
-            <div className="flex flex-col gap-1.5 w-full mt-2">
+            <div className="text-center">
+              <p className="text-sm font-semibold text-white mb-1">What can I help you with?</p>
+              <p className="text-xs text-zinc-500 max-w-[260px]">
+                I know your Spotify stats, catalog, and career. Just ask — or tap one of these:
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 w-full mt-1">
               {[
-                `Build a release plan for my next drop`,
-                `Create a one-sheet for ${artistData.name}`,
-                `Find journalists to pitch my latest single to`,
-                `How do I grow my fanbase this month?`,
-              ].map(s => (
-                <button key={s} onClick={() => onSend(s)}
-                  className="text-left text-[11px] text-zinc-500 hover:text-zinc-300 bg-[#0d0d0d] hover:bg-[#141414] border border-[#1e1e1e] rounded-lg px-3 py-2 transition-colors">
-                  {s}
+                { emoji: "📄", label: "Make me a one-sheet", sub: "For booking agents & press" },
+                { emoji: "🚀", label: "Build a release plan", sub: "For my next drop" },
+                { emoji: "📰", label: "Write a press release", sub: "For my latest project" },
+                { emoji: "📈", label: "How do I grow faster?", sub: "Get a custom strategy" },
+              ].map(({ emoji, label, sub }) => (
+                <button key={label} onClick={() => onSend(label)}
+                  className="text-left bg-[#0d0d0d] hover:bg-[#161616] border border-[#1e1e1e] hover:border-[#6366f1]/40 rounded-xl px-4 py-3 transition-all group">
+                  <div className="flex items-center gap-3">
+                    <span className="text-base">{emoji}</span>
+                    <div>
+                      <div className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors">{label}</div>
+                      <div className="text-[11px] text-zinc-600">{sub}</div>
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -857,11 +869,11 @@ function HelmChat({
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             {msg.role === "assistant" && (
-              <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center shrink-0 mt-0.5 mr-2">
-                <span className="text-[9px] font-bold text-white">H</span>
+              <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center shrink-0 mt-0.5 mr-2.5">
+                <span className="text-[10px] font-bold text-white">H</span>
               </div>
             )}
-            <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
+            <div className={`max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
               msg.role === "user"
                 ? "bg-[#6366f1]/20 text-white border border-[#6366f1]/30"
                 : "bg-[#0d0d0d] text-zinc-200 border border-[#1e1e1e]"
@@ -873,10 +885,10 @@ function HelmChat({
 
         {isStreaming && (
           <div className="flex justify-start">
-            <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center shrink-0 mt-0.5 mr-2">
-              <span className="text-[9px] font-bold text-white">H</span>
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center shrink-0 mt-0.5 mr-2.5">
+              <span className="text-[10px] font-bold text-white">H</span>
             </div>
-            <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl px-3 py-2.5 flex gap-1">
+            <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl px-4 py-3 flex gap-1.5 items-center">
               {[0,1,2].map(i => (
                 <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#6366f1]"
                   style={{ animation: `bounce 1.2s ease-in-out ${i*0.2}s infinite` }} />
@@ -887,23 +899,26 @@ function HelmChat({
       </div>
 
       {/* Input */}
-      <div className="border-t border-[#1e1e1e] p-3 shrink-0">
-        <div className="flex items-center gap-2 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg px-3 py-2 focus-within:border-[#6366f1]/50 transition-colors">
+      <div className="border-t border-[#1e1e1e] p-4 shrink-0">
+        <div className="flex items-center gap-3 bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/50 transition-colors">
           <input
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
-            placeholder={`Ask Helm anything…`}
-            className="flex-1 bg-transparent text-xs text-white placeholder-zinc-600 outline-none"
+            placeholder="Ask Helm anything…"
+            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 outline-none"
             disabled={isStreaming}
           />
           <button
             onClick={submit}
             disabled={isStreaming || !input.trim()}
-            className="text-[#6366f1] hover:text-[#818cf8] transition-colors font-bold disabled:opacity-40"
-          >↑</button>
+            className="w-7 h-7 rounded-lg bg-[#6366f1] hover:bg-[#818cf8] disabled:opacity-30 transition-all flex items-center justify-center"
+          >
+            <span className="text-white text-sm font-bold leading-none">↑</span>
+          </button>
         </div>
+        <p className="text-[10px] text-zinc-700 text-center mt-2">Press Enter to send</p>
       </div>
     </div>
   );
@@ -928,7 +943,7 @@ function OverviewTab({
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6">
       {/* Main content */}
       <div className="flex flex-col gap-6">
         {/* Tasks */}
