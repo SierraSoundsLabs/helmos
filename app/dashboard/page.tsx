@@ -2357,6 +2357,41 @@ function DashboardContent() {
     setGeneratingDoc(titles[type]);
 
     try {
+      // One-sheets get the full visual design at /one-sheet/[slug]
+      if (type === "one-sheet") {
+        // Step 1: generate a press-ready bio via Claude
+        let bio = "";
+        try {
+          const bioRes = await fetch("/api/helm/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "bio", artistData }),
+          });
+          const bioData = await bioRes.json();
+          if (bioData.content) {
+            // Extract the Short Bio (50 words) section, fall back to full content
+            const shortMatch = bioData.content.match(/\*\*Short Bio[^*]*\*\*\n+([\s\S]+?)(?=\n\n|\*\*|$)/);
+            bio = shortMatch ? shortMatch[1].trim() : bioData.content.slice(0, 300).trim();
+          }
+        } catch { /* proceed with empty bio — EPK bio will be used as fallback */ }
+
+        // Step 2: publish the structured visual one-sheet
+        const res = await fetch("/api/helm/onesheet/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ artistData, bio }),
+        });
+        const data = await res.json();
+        if (data.url) {
+          window.open(data.url, "_blank");
+          setDocModal({
+            content: `Your one-sheet is ready!\n\n🔗 ${data.url}\n\nShare this link with labels, booking agents, and press. It includes your photo, stats, top tracks, and bio.\n\nTip: Use the Print / Download PDF button on the page to save a PDF.`,
+            title: "One-Sheet Ready ✓",
+          });
+        }
+        return;
+      }
+
       const res = await fetch("/api/helm/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
