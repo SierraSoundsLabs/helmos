@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
       subject: draft.subject,
       text: draft.body,
       html: `<pre style="font-family:sans-serif;white-space:pre-wrap">${draft.body}</pre>`,
+      replyTo: session.email, // replies go to the artist's real inbox
     });
 
     const record: OutreachRecord = {
