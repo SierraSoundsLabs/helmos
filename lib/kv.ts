@@ -87,12 +87,10 @@ export async function kvSet(key: string, value: unknown, exSeconds?: number): Pr
     memSet(key, payload, exSeconds);
     return;
   }
-  const args: unknown[] = [payload];
-  if (exSeconds) { args.push("EX"); args.push(exSeconds); }
-  await kvFetch(`/set/${encodeURIComponent(key)}`, {
-    method: "POST",
-    body: JSON.stringify(args),
-  });
+  // Upstash REST: /set/key/value[/EX/seconds]
+  let path = `/set/${encodeURIComponent(key)}/${encodeURIComponent(payload)}`;
+  if (exSeconds) path += `/EX/${exSeconds}`;
+  await kvFetch(path, { method: "POST" });
 }
 
 export async function kvDel(key: string): Promise<void> {
