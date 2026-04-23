@@ -943,7 +943,7 @@ function OverviewTab({
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_560px] gap-6">
       {/* Main content */}
       <div className="flex flex-col gap-6">
         {/* Tasks */}
@@ -2286,19 +2286,23 @@ function DashboardContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artistData, chatMessages, isChatStreaming]);
 
-  // Royalty audit handler — streams real database search results
+  // Royalty check — guided conversational flow
   const handleRoyaltyAudit = useCallback(async () => {
-    if (!artistData || isChatStreaming) return;
+    if (!artistData) return;
     if (!isPaid) { handleSubscribe(); return; }
 
     setActiveTab("overview");
 
-    const userMsg: ChatMessage = { role: "user", content: "Run a royalty audit on my catalog" };
-    setChatMessages(prev => [...prev, userMsg]);
-    setIsChatStreaming(true);
+    const openingMsg = "Let me make sure you're collecting every royalty you're owed. Quick check — a few yes/no questions.\n\n**Are you registered with a Performing Rights Organization (PRO)?**\n_(ASCAP, BMI, or SESAC in the US)_\n\nThese collect performance royalties every time your music plays on radio, TV, in bars, venues, or streaming. Yes or no?";
+    setChatMessages(prev => [
+      ...prev,
+      { role: "user", content: "Run a royalty audit" },
+      { role: "assistant", content: openingMsg },
+    ]);
+    return;
 
-    // Add placeholder message
-    setChatMessages(prev => [...prev, { role: "assistant", content: "Running your royalty audit now. Searching The MLC, ASCAP, and BMI... \u23F3" }]);
+    // eslint-disable-next-line no-unreachable
+    void isChatStreaming;
 
     const trackNames = [
       ...artistData.allReleases.slice(0, 10).map(r => r.name),
