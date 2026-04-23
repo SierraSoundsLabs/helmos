@@ -2427,6 +2427,23 @@ function DashboardContent() {
     if (!artistId) { router.push("/"); return; }
     try {
       setPhase("loading-artist");
+
+      // Try to load cached analysis first — skip scan screen for returning users
+      const cachedRes = await fetch(`/api/analyze?artistId=${artistId}`);
+      if (cachedRes.ok) {
+        const cachedAnalysis = await cachedRes.json();
+        // Also fetch fresh artist data (fast) for display
+        const artistRes = await fetch(`/api/artist?spotifyUrl=spotify:artist:${artistId}`);
+        const artist = await artistRes.json();
+        if (artistRes.ok) {
+          setArtistData(artist);
+          setAnalysis(cachedAnalysis);
+          setPhase("done");
+          return;
+        }
+      }
+
+      // No cache — do full scan
       const artistRes = await fetch(`/api/artist?spotifyUrl=spotify:artist:${artistId}`);
       const artist = await artistRes.json();
       if (!artistRes.ok) { setErrorMsg(artist.error || "Failed to load artist"); setPhase("error"); return; }
