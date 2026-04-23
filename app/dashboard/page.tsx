@@ -950,38 +950,22 @@ function OverviewTab({
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-white">Tasks</h2>
-            <span className="text-xs text-zinc-500">{analysis.tasks.length} queued by Helm</span>
+            <span className="text-xs text-zinc-500">{analysis.tasks.length} queued</span>
           </div>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
             {analysis.tasks.map((task, i) => (
-              <div key={i} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4 hover:border-[#2e2e2e] transition-colors">
-                <h3 className="text-sm font-semibold text-white mb-2">{task.title}</h3>
-                <ul className="flex flex-col gap-1.5 mb-3">
-                  {task.bullets.map((b, j) => (
-                    <li key={j} className="text-xs text-zinc-400 flex gap-2">
-                      <span className="text-zinc-600 shrink-0">–</span>
-                      <span>{b}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${CATEGORY_COLORS[task.category] || "bg-zinc-700/40 text-zinc-400 border-zinc-600/30"}`}>
-                      {task.category}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${URGENCY_COLORS[task.urgency] || "bg-zinc-700/40 text-zinc-400 border-zinc-600/30"}`}>
-                      {task.urgency}
-                    </span>
-                  </div>
-                  {task.actionButton && (
-                    <button
-                      onClick={() => isPaid ? onSendChat(`Let's execute this task: ${task.title}. ${task.bullets.join(". ")}`) : onSubscribe()}
-                      className="px-3 py-1 rounded-lg text-[11px] font-semibold text-white bg-[#6366f1]/80 hover:bg-[#6366f1] transition-colors shrink-0"
-                    >
-                      {isPaid ? task.actionButton : "Activate"} →
-                    </button>
-                  )}
+              <div
+                key={i}
+                onClick={() => isPaid ? onSendChat(`Let's execute this task: ${task.title}. ${task.bullets.join(". ")}`) : onSubscribe()}
+                className="bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-3 hover:border-[#6366f1]/40 hover:bg-[#6366f1]/5 transition-all cursor-pointer flex items-center justify-between gap-3 group"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border shrink-0 ${URGENCY_COLORS[task.urgency] || "bg-zinc-700/40 text-zinc-400 border-zinc-600/30"}`}>
+                    {task.urgency}
+                  </span>
+                  <span className="text-sm font-medium text-white truncate">{task.title}</span>
                 </div>
+                <span className="text-zinc-600 group-hover:text-[#6366f1] transition-colors shrink-0 text-sm">→</span>
               </div>
             ))}
           </div>
@@ -2574,11 +2558,10 @@ function DashboardContent() {
             {isPaid ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-emerald-400 font-medium">⚡ Active</span>
-                <span className="hidden sm:block text-xs text-zinc-500">{analysis.topOpportunity}</span>
               </div>
             ) : (
               <>
-                <span className="hidden sm:block text-xs text-zinc-500 max-w-[240px] truncate">{analysis.topOpportunity}</span>
+
                 <a
                   href="/login"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 border border-[#1e1e1e] hover:border-[#2e2e2e] transition-colors"
