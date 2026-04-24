@@ -127,8 +127,8 @@ Note: Some searches may have returned errors (401/403) which means the data coul
 Please generate the full royalty audit report.`;
 
         const claudeStream = await client.messages.stream({
-          model: "claude-opus-4-6",
-          max_tokens: 2048,
+          model: "claude-sonnet-4-5",
+          max_tokens: 1000,
           system: "You are Helm, a music industry AI advisor. Generate a concise royalty audit report. Use markdown formatting with tables where appropriate. Be specific and actionable.",
           messages: [{ role: "user", content: userMessage }],
         });
