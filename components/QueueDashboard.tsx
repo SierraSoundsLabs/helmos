@@ -247,7 +247,7 @@ export default function QueueDashboard({
               onClick={onUpgrade}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] hover:opacity-90 transition-opacity"
             >
-              Start Free Trial · $49/mo →
+              Start Free Trial · $29/mo →
             </button>
           </div>
         )}
