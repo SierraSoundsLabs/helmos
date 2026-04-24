@@ -926,7 +926,7 @@ function HelmChat({
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({
-  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, onNewOpportunityCount,
+  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, onNewOpportunityCount, realTasks,
 }: {
   artistData: ArtistData;
   analysis: AnalysisResult;
@@ -938,6 +938,7 @@ function OverviewTab({
   chatMessages: ChatMessage[];
   isChatStreaming: boolean;
   onNewOpportunityCount?: (count: number) => void;
+  realTasks?: { id: string; title: string; status: string; type: string }[];
 }) {
   const stage = analysis.careerStage || "Emerging";
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
@@ -946,28 +947,32 @@ function OverviewTab({
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_560px] gap-6">
       {/* Main content */}
       <div className="flex flex-col gap-6">
-        {/* Tasks */}
+        {/* Tasks — real queue only */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-white">Tasks</h2>
-            <span className="text-xs text-zinc-500">{analysis.tasks.length} queued</span>
+            {(realTasks ?? []).filter(t => t.status !== "completed").length > 0 && (
+              <span className="text-xs text-zinc-500">{(realTasks ?? []).filter(t => t.status !== "completed").length} in progress</span>
+            )}
           </div>
           <div className="flex flex-col gap-2">
-            {analysis.tasks.map((task, i) => (
-              <div
-                key={i}
-                onClick={() => isPaid ? onSendChat(`Let's execute this task: ${task.title}. ${task.bullets.join(". ")}`) : onSubscribe()}
-                className="bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-3 hover:border-[#6366f1]/40 hover:bg-[#6366f1]/5 transition-all cursor-pointer flex items-center justify-between gap-3 group"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border shrink-0 ${URGENCY_COLORS[task.urgency] || "bg-zinc-700/40 text-zinc-400 border-zinc-600/30"}`}>
-                    {task.urgency}
-                  </span>
-                  <span className="text-sm font-medium text-white truncate">{task.title}</span>
-                </div>
-                <span className="text-zinc-600 group-hover:text-[#6366f1] transition-colors shrink-0 text-sm">→</span>
+            {(realTasks ?? []).length === 0 ? (
+              <div className="bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-4 text-center">
+                <p className="text-xs text-zinc-500 mb-2">No tasks running yet.</p>
+                <p className="text-xs text-zinc-600">Ask Helm to build a release plan, pitch journalists, or run a royalty audit — it will run in the background.</p>
               </div>
-            ))}
+            ) : (
+              (realTasks ?? []).map((task) => {
+                const statusColor = task.status === "running" ? "text-emerald-400" : task.status === "completed" ? "text-zinc-600" : "text-amber-400";
+                const statusLabel = task.status === "running" ? "⏳ Running" : task.status === "completed" ? "✓ Done" : "⏸ Pending";
+                return (
+                  <div key={task.id} className="bg-[#111] border border-[#1e1e1e] rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-white truncate">{task.title}</span>
+                    <span className={`text-[11px] font-semibold shrink-0 ${statusColor}`}>{statusLabel}</span>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -2162,6 +2167,9 @@ function DashboardContent() {
   // Agent task status banner (for returning users)
   const [agentBanner, setAgentBanner] = useState<{ pending: number; running: number; completed: number; total: number } | null>(null);
 
+  // Real tasks from the queue
+  const [realTasks, setRealTasks] = useState<{ id: string; title: string; status: string; type: string }[]>([]);
+
   // Check paid status on load
   useEffect(() => {
     fetch("/api/auth/session")
@@ -2170,19 +2178,19 @@ function DashboardContent() {
       .catch(() => {});
   }, []);
 
-  // Fetch agent task status for returning users — show banner if work is in progress
+  // Fetch real tasks from the queue
   useEffect(() => {
     if (!artistId || !isPaid || mode === "queue") return;
     fetch(`/api/tasks?artist=${artistId}`)
       .then(r => r.json())
       .then(d => {
-        const tasks: { status: string }[] = d.tasks ?? [];
+        const tasks: { id: string; title: string; status: string; type: string }[] = d.tasks ?? [];
+        setRealTasks(tasks);
         if (!tasks.length) return;
         const pending = tasks.filter(t => t.status === "pending").length;
         const running = tasks.filter(t => t.status === "running").length;
         const completed = tasks.filter(t => t.status === "completed").length;
         const total = tasks.length;
-        // Show banner only if work is incomplete
         if (pending + running > 0) setAgentBanner({ pending, running, completed, total });
       })
       .catch(() => {});
@@ -2702,6 +2710,7 @@ function DashboardContent() {
             chatMessages={chatMessages}
             isChatStreaming={isChatStreaming}
             onNewOpportunityCount={setOpportunityCount}
+            realTasks={realTasks}
           />
         )}
         {mode !== "queue" && activeTab === "works" && (
