@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
 
     await kvSet(key, { email, artistId: customer.artistId, customerId: customer.customerId }, MAGIC_LINK_TTL);
 
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://helmos.co";
+    // Use request origin so magic links work on preview deployments too
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `${req.nextUrl.protocol}//${req.nextUrl.host}`;
     const magicUrl = `${baseUrl}/api/auth/magic/verify?token=${token}`;
 
     await sendEmail({
