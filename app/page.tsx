@@ -23,6 +23,16 @@ function HomeContent() {
   const [loginState, setLoginState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [loginError, setLoginError] = useState("");
 
+  // Password login/register state
+  const [loginTab, setLoginTab] = useState<"magic" | "password">("magic");
+  const [pwMode, setPwMode] = useState<"login" | "register">("login");
+  const [pwEmail, setPwEmail] = useState("");
+  const [pwPassword, setPwPassword] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwShowPass, setPwShowPass] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState("");
+
   useEffect(() => {
     const err = searchParams.get("error");
     if (err === "expired") setLoginError("Your login link has expired. Please request a new one.");
@@ -87,6 +97,34 @@ function HomeContent() {
     } catch {
       setLoginState("error");
       setLoginError("Something went wrong. Please try again.");
+    }
+  }
+
+  async function handlePasswordAuth(e: React.FormEvent) {
+    e.preventDefault();
+    setPwError("");
+    const email = pwEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) { setPwError("Please enter a valid email address."); return; }
+    if (!pwPassword || pwPassword.length < 8) { setPwError("Password must be at least 8 characters."); return; }
+    if (pwMode === "register" && pwPassword !== pwConfirm) { setPwError("Passwords do not match."); return; }
+
+    setPwLoading(true);
+    try {
+      const res = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: pwMode, email, password: pwPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setPwError(data.error || "Something went wrong. Please try again.");
+        return;
+      }
+      router.push(data.redirect || "/dashboard");
+    } catch {
+      setPwError("Something went wrong. Please try again.");
+    } finally {
+      setPwLoading(false);
     }
   }
 
@@ -191,47 +229,132 @@ function HomeContent() {
             Free · No account required · Try 3 days free · $29/mo Helmos Pro
           </p>
 
-          {/* ── MAGIC LINK LOGIN ── */}
+          {/* ── MEMBER LOGIN ── */}
           <div className="w-full border-t border-[#1e1e1e] pt-6 flex flex-col gap-4">
             <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">Already a member?</p>
 
-            {loginState === "sent" ? (
-              <div className="flex flex-col items-center gap-3 py-4">
-                <div className="w-10 h-10 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 flex items-center justify-center">
-                  <span className="text-lg">📬</span>
-                </div>
-                <p className="text-sm text-white font-medium">Check your inbox</p>
-                <p className="text-xs text-zinc-500 text-center">
-                  We sent a login link to <span className="text-zinc-300">{loginEmail}</span>.
-                  <br />It expires in 15 minutes.
-                </p>
+            {/* Tab switcher */}
+            <div className="flex gap-1 p-1 bg-[#111] border border-[#2e2e2e] rounded-xl self-start">
+              {(["magic", "password"] as const).map(tab => (
                 <button
-                  onClick={() => { setLoginState("idle"); setLoginEmail(""); }}
-                  className="text-xs text-[#6366f1] hover:underline mt-1"
+                  key={tab}
+                  type="button"
+                  onClick={() => setLoginTab(tab)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    loginTab === tab
+                      ? "bg-[#1e1e1e] text-white shadow"
+                      : "text-zinc-500 hover:text-zinc-300"
+                  }`}
                 >
-                  Use a different email
+                  {tab === "magic" ? "Magic Link" : "Password"}
                 </button>
-              </div>
-            ) : (
-              <form onSubmit={handleMagicLink} className="w-full flex flex-col gap-3">
+              ))}
+            </div>
+
+            {/* Magic Link tab */}
+            {loginTab === "magic" && (
+              loginState === "sent" ? (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <div className="w-10 h-10 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 flex items-center justify-center">
+                    <span className="text-lg">📬</span>
+                  </div>
+                  <p className="text-sm text-white font-medium">Check your inbox</p>
+                  <p className="text-xs text-zinc-500 text-center">
+                    We sent a login link to <span className="text-zinc-300">{loginEmail}</span>.
+                    <br />It expires in 15 minutes.
+                  </p>
+                  <button
+                    onClick={() => { setLoginState("idle"); setLoginEmail(""); }}
+                    className="text-xs text-[#6366f1] hover:underline mt-1"
+                  >
+                    Use a different email
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleMagicLink} className="w-full flex flex-col gap-3">
+                  <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
+                    <MailIcon />
+                    <input
+                      type="email"
+                      value={loginEmail}
+                      onChange={e => setLoginEmail(e.target.value)}
+                      placeholder="your@email.com"
+                      className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
+                      autoComplete="email"
+                    />
+                  </div>
+                  {loginError && <p className="text-xs text-red-400 text-center">{loginError}</p>}
+                  <button
+                    type="submit"
+                    disabled={loginState === "sending"}
+                    className="w-full py-3 rounded-xl text-sm font-semibold text-white border border-[#2e2e2e] bg-[#111] hover:bg-[#1a1a1a] hover:border-[#6366f1]/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    {loginState === "sending" ? "Sending…" : "Email me a login link →"}
+                  </button>
+                </form>
+              )
+            )}
+
+            {/* Password tab */}
+            {loginTab === "password" && (
+              <form onSubmit={handlePasswordAuth} className="w-full flex flex-col gap-3">
                 <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
                   <MailIcon />
                   <input
                     type="email"
-                    value={loginEmail}
-                    onChange={e => setLoginEmail(e.target.value)}
+                    value={pwEmail}
+                    onChange={e => setPwEmail(e.target.value)}
                     placeholder="your@email.com"
                     className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
                     autoComplete="email"
                   />
                 </div>
-                {loginError && <p className="text-xs text-red-400 text-center">{loginError}</p>}
+                <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
+                  <LockIcon />
+                  <input
+                    type={pwShowPass ? "text" : "password"}
+                    value={pwPassword}
+                    onChange={e => setPwPassword(e.target.value)}
+                    placeholder="Password"
+                    className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
+                    autoComplete={pwMode === "register" ? "new-password" : "current-password"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPwShowPass(v => !v)}
+                    className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0"
+                    tabIndex={-1}
+                  >
+                    {pwShowPass ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                </div>
+                {pwMode === "register" && (
+                  <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
+                    <LockIcon />
+                    <input
+                      type={pwShowPass ? "text" : "password"}
+                      value={pwConfirm}
+                      onChange={e => setPwConfirm(e.target.value)}
+                      placeholder="Confirm password"
+                      className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
+                      autoComplete="new-password"
+                    />
+                  </div>
+                )}
+                {pwError && <p className="text-xs text-red-400 text-center">{pwError}</p>}
                 <button
                   type="submit"
-                  disabled={loginState === "sending"}
+                  disabled={pwLoading}
                   className="w-full py-3 rounded-xl text-sm font-semibold text-white border border-[#2e2e2e] bg-[#111] hover:bg-[#1a1a1a] hover:border-[#6366f1]/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
-                  {loginState === "sending" ? "Sending…" : "Email me a login link →"}
+                  {pwLoading ? "Signing in…" : pwMode === "register" ? "Create account →" : "Sign In →"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPwMode(m => m === "login" ? "register" : "login"); setPwError(""); setPwConfirm(""); }}
+                  className="text-xs text-zinc-500 hover:text-[#6366f1] transition-colors text-center"
+                >
+                  {pwMode === "login" ? "First time? Set a password →" : "← Back to sign in"}
                 </button>
               </form>
             )}
@@ -265,6 +388,35 @@ function MailIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500 shrink-0">
       <rect x="2" y="4" width="20" height="16" rx="2" />
       <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500 shrink-0">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+      <line x1="2" x2="22" y1="2" y2="22" />
     </svg>
   );
 }
