@@ -1,6 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        // Old /one-sheet/[slug] links redirect to canonical /[slug]
+        source: "/one-sheet/:slug",
+        destination: "/:slug",
+        permanent: true,
+      },
+    ];
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },

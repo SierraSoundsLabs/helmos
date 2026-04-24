@@ -5,6 +5,16 @@ import type { OneSheetData } from "@/lib/types";
 import { formatNumber } from "@/lib/spotify";
 import Link from "next/link";
 
+export async function generateMetadata({ params }: Props) {
+  const { artistSlug } = await params;
+  const data = await kvGet<OneSheetData>(`onesheet:${artistSlug}`);
+  if (!data) return { title: "Artist Not Found" };
+  return {
+    title: `${data.artistName} — Helm`,
+    description: data.bio?.slice(0, 160) || `${data.artistName} artist profile`,
+  };
+}
+
 interface Props {
   params: Promise<{ artistSlug: string }>;
 }
@@ -205,6 +215,18 @@ export default async function ArtistOneSheePage({ params }: Props) {
             </a>
           </section>
         )}
+
+        {/* One-Sheet Download */}
+        <section>
+          <Link
+            href={`/one-sheet/${artistSlug}`}
+            target="_blank"
+            className="inline-flex items-center gap-2 px-5 py-3 bg-[#111] border border-[#1e1e1e] rounded-xl hover:border-[#6366f1]/40 hover:bg-[#12121a] transition-all text-sm font-medium text-zinc-300"
+          >
+            <span>📄</span>
+            <span>Download One-Sheet</span>
+          </Link>
+        </section>
       </div>
 
       {/* Footer */}
