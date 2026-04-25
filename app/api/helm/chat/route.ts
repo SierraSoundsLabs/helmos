@@ -62,12 +62,20 @@ export async function POST(req: NextRequest) {
 
   const trimmedMessages = messages.slice(-10);
 
-  const stream = await client.messages.stream({
-    model: "claude-haiku-3-5",
-    max_tokens: 600,
-    system: systemPrompt,
-    messages: trimmedMessages,
-  });
+  let stream;
+  try {
+    stream = await client.messages.stream({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 600,
+      system: systemPrompt,
+      messages: trimmedMessages,
+    });
+  } catch (e) {
+    console.error("Anthropic stream init failed:", e);
+    return new Response(JSON.stringify({ error: "AI service unavailable" }), {
+      status: 502, headers: { "Content-Type": "application/json" },
+    });
+  }
 
   return new Response(
     new ReadableStream({
@@ -81,6 +89,9 @@ export async function POST(req: NextRequest) {
               controller.enqueue(new TextEncoder().encode(event.delta.text));
             }
           }
+        } catch (e) {
+          console.error("Anthropic stream error:", e);
+          controller.enqueue(new TextEncoder().encode("Sorry, I had an error generating a response. Please try again."));
         } finally {
           controller.close();
         }
