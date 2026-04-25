@@ -2272,6 +2272,38 @@ function DashboardContent() {
         });
       }
 
+      // Strip all action tags from display content
+      const cleanContent = assistantContent
+        .replace(/<generate[^/]*\/>/g, "")
+        .replace(/<send-email[^/]*\/>/g, "")
+        .trim();
+      if (cleanContent !== assistantContent.trim()) {
+        setChatMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: "assistant", content: cleanContent };
+          return updated;
+        });
+      }
+
+      // Handle send-email tag
+      const sendEmailMatch = assistantContent.match(/<send-email\s+to="([^"]+)"(?:\s+context="([^"]*)")?\/>/i);
+      if (sendEmailMatch && artistData) {
+        const toEmail = sendEmailMatch[1];
+        const context = sendEmailMatch[2] || "";
+        fetch("/api/helm/outreach/chat-send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ artistData, toEmail, context }),
+        }).then(r => r.json()).then(data => {
+          const statusMsg = data.status === "sent"
+            ? `✅ Email sent to ${toEmail}\n**Subject:** ${data.subject}\n\nCheck the Outreach tab to see it in your sent history.`
+            : `❌ Failed to send email to ${toEmail}. Please try again or use the Outreach tab.`;
+          setChatMessages(prev => [...prev, { role: "assistant", content: statusMsg }]);
+        }).catch(() => {
+          setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Something went wrong sending the email. Please try the Outreach tab.` }]);
+        });
+      }
+
       // Check for generate trigger in response
       const genMatch = assistantContent.match(/<generate\s+type="([^"]+)"\s*\/>/);
       if (genMatch) {
