@@ -2235,6 +2235,7 @@ function DashboardContent() {
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [savedBioAt, setSavedBioAt] = useState<string | null>(null);
+  const [hasSavedBio, setHasSavedBio] = useState(false);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
 
   // Document modal
@@ -2260,6 +2261,15 @@ function DashboardContent() {
       .then(d => { if (d.authenticated) setIsPaid(true); })
       .catch(() => {});
   }, []);
+
+  // Check if artist has a saved bio
+  useEffect(() => {
+    if (!artistId) return;
+    fetch(`/api/helm/bio?artistId=${artistId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.bio) setHasSavedBio(true); })
+      .catch(() => {});
+  }, [artistId, savedBioAt]);
 
   // Fetch real tasks from the queue
   useEffect(() => {
@@ -2329,6 +2339,7 @@ function DashboardContent() {
         body: JSON.stringify({
           messages: newMessages,
           artistContext: artistData,
+          hasBio: hasSavedBio,
         }),
       });
 
@@ -2493,24 +2504,42 @@ function DashboardContent() {
       "press-release": "Press Release",
       "pitch-email": "Playlist Pitch Email",
     };
+
+    // Gate: one-sheet and EPK require a saved bio first
+    if ((type === "one-sheet") && !hasSavedBio) {
+      setChatMessages(prev => [
+        ...prev,
+        { role: "assistant", content: "Before I create your one-sheet, let's make sure it tells your story properly. A bio interview only takes 2 minutes and I'll use those answers to make everything much better.\n\nReady? Here's the first question:\n\n**Where are you from, and how did you get started in music?**" },
+      ]);
+      setActiveTab("overview");
+      return;
+    }
+
     setGeneratingDoc(titles[type]);
 
     try {
       // One-sheets get the full visual design at /one-sheet/[slug]
       if (type === "one-sheet") {
-        // Step 1: generate a press-ready bio via Claude
+        // Step 1: use saved bio if available, otherwise generate one
         let bio = "";
         try {
-          const bioRes = await fetch("/api/helm/generate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type: "bio", artistData }),
-          });
-          const bioData = await bioRes.json();
-          if (bioData.content) {
-            // Extract the Short Bio (50 words) section, fall back to full content
-            const shortMatch = bioData.content.match(/\*\*Short Bio[^*]*\*\*\n+([\s\S]+?)(?=\n\n|\*\*|$)/);
-            bio = shortMatch ? shortMatch[1].trim() : bioData.content.slice(0, 300).trim();
+          const savedBioRes = await fetch(`/api/helm/bio?artistId=${artistData.id}`);
+          if (savedBioRes.ok) {
+            const savedBioData = await savedBioRes.json();
+            bio = savedBioData?.bio?.short ?? "";
+          }
+          if (!bio) {
+            // Fall back to generating if no saved bio
+            const bioRes = await fetch("/api/helm/generate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ type: "bio", artistData }),
+            });
+            const bioData = await bioRes.json();
+            if (bioData.content) {
+              const shortMatch = bioData.content.match(/\*\*Short Bio[^*]*\*\*\n+([\s\S]+?)(?=\n\n|\*\*|$)/);
+              bio = shortMatch ? shortMatch[1].trim() : bioData.content.slice(0, 300).trim();
+            }
           }
         } catch { /* proceed with empty bio — EPK bio will be used as fallback */ }
 
@@ -2551,14 +2580,14 @@ function DashboardContent() {
       if (data.content) {
         setDocModal({ content: data.content, title: titles[type] });
         // Notify links tab that bio was saved
-        if (type === "bio") setSavedBioAt(new Date().toISOString());
+        if (type === "bio") { setSavedBioAt(new Date().toISOString()); setHasSavedBio(true); }
       }
     } catch (e) {
       console.error("Generate error", e);
     } finally {
       setGeneratingDoc(null);
     }
-  }, [artistData, chatMessages]);
+  }, [artistData, chatMessages, hasSavedBio]);
 
   const loadDashboard = useCallback(async () => {
     if (!artistId) { router.push("/"); return; }

@@ -5,7 +5,7 @@ import { decodeSession, COOKIE_NAME } from "@/lib/session";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-function buildSystemPrompt(artistContext: Record<string, unknown>): string {
+function buildSystemPrompt(artistContext: Record<string, unknown>, hasBio?: boolean): string {
   const a = artistContext as {
     name?: string; genres?: string[]; monthlyListeners?: string; spotifyFollowers?: string;
     spotifyPopularity?: number; allReleases?: {name:string;releaseDate:string;type:string}[];
@@ -23,7 +23,9 @@ Capabilities: one-sheet, bio, press release, royalty audit, release plan, social
 
 CRITICAL RULE — ACTION OVER ASKING: When a user asks if you can do something or asks about a capability — DO IT. No "Yes, I can do that" responses.
 
-BIO RULE — ALWAYS INTERVIEW FIRST: When asked to write a bio, NEVER generate immediately from Spotify data alone. Instead, run a short interview. Ask these 5 questions ONE AT A TIME, waiting for each answer before asking the next:
+BIO-FIRST GATE: If the artist asks for a one-sheet or EPK and ${hasBio ? "they already have a saved bio — proceed normally" : "they do NOT have a saved bio yet — redirect them to complete the bio interview first"}. Say: "Before I build your one-sheet, let's do a 2-minute bio interview so it actually tells your story. Ready?", then start Q1 below.
+
+BIO RULE — ALWAYS INTERVIEW FIRST: When asked to write a bio (or redirected here from one-sheet/EPK), NEVER generate immediately from Spotify data alone. Instead, run a short interview. Ask these 5 questions ONE AT A TIME, waiting for each answer before asking the next:
   Q1: "Where are you from, and how did you get started in music?"
   Q2: "Why do you make music — what drives you to keep going?"
   Q3: "Who are your biggest musical influences, and have you ever played or worked with any of them?"
@@ -67,14 +69,14 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { messages, artistContext } = await req.json();
+  const { messages, artistContext, hasBio } = await req.json();
   if (!Array.isArray(messages) || messages.length === 0) {
     return new Response(JSON.stringify({ error: "No messages provided" }), {
       status: 400, headers: { "Content-Type": "application/json" },
     });
   }
 
-  const systemPrompt = buildSystemPrompt(artistContext || {});
+  const systemPrompt = buildSystemPrompt(artistContext || {}, hasBio === true);
 
   const trimmedMessages = messages.slice(-10);
 
