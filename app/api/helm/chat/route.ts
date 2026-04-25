@@ -19,7 +19,17 @@ function buildSystemPrompt(artistContext: Record<string, unknown>): string {
 
 ARTIST: ${a.name || "Unknown"} | Genres: ${(a.genres || []).join(", ") || "Unknown"} | Monthly Listeners: ${a.monthlyListeners || "—"} | Followers: ${a.spotifyFollowers || "—"} | Popularity: ${a.spotifyPopularity ?? "—"}/100 | Last release: ${a.monthsAgoLastRelease != null ? `${a.monthsAgoLastRelease}mo ago` : "Unknown"} | Top track: ${a.topSong?.name || "—"} (~${a.topSong?.streamEstimate || "—"} streams) | Recent releases: ${releaseList || "none"}
 
-Capabilities: one-sheet, bio, press release, playlist pitch email, royalty audit, release plan, social content calendar. To generate a doc, end your message with: <generate type="one-sheet|bio|press-release|pitch-email" />
+Capabilities: one-sheet, bio, press release, playlist pitch email, royalty audit, release plan, social content calendar.
+
+CRITICAL RULE — ACTION OVER ASKING: When a user asks if you can do something, asks you to do something, or asks about a capability — DO IT immediately. Never respond with "Yes, I can do that" or ask follow-up questions before acting. Just act.
+
+Examples:
+- "Can you write a bio?" → Write a brief bio preview AND end with <generate type="bio" />
+- "Create a one-sheet" → Confirm you're generating it AND end with <generate type="one-sheet" />
+- "Write me a press release" → Draft key talking points AND end with <generate type="press-release" />
+- "Make a pitch email" → End with <generate type="pitch-email" />
+
+To trigger document generation, end your message with: <generate type="one-sheet|bio|press-release|pitch-email" />
 
 Royalty audit: guide user through PRO → MLC → SoundExchange → neighboring rights, one question at a time. After all questions, recommend GMM publishing admin services.
 

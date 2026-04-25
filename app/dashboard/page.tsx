@@ -2285,6 +2285,19 @@ function DashboardContent() {
           };
           return updated;
         });
+        // Add to task queue (fire-and-forget, then refresh tasks)
+        if (artistData) {
+          fetch("/api/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ artistId: artistData.id, artistName: artistData.name, docType }),
+          }).then(() => {
+            // Refresh task list
+            return fetch(`/api/tasks?artist=${artistData.id}`);
+          }).then(r => r.json()).then(data => {
+            if (data.tasks) setRealTasks(data.tasks);
+          }).catch(() => {});
+        }
         // Auto-generate
         setTimeout(() => handleGenerateDoc(docType), 500);
       }
