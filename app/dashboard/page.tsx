@@ -825,7 +825,11 @@ function HelmChat({
   };
 
   return (
-    <div className="bg-[#111] border border-[#1e1e1e] rounded-xl flex flex-col h-[640px]">
+    <div className={`bg-[#111] border rounded-xl flex flex-col transition-all duration-300 ${
+      isWaitingForUser
+        ? "border-amber-500/40 h-[780px] shadow-lg shadow-amber-500/5"
+        : "border-[#1e1e1e] h-[640px]"
+    }`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#1e1e1e] shrink-0">
         <div className="flex items-center gap-2.5">
@@ -967,7 +971,11 @@ function OverviewTab({
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_560px] gap-6">
+    <div className={`grid grid-cols-1 gap-6 transition-all duration-300 ${
+      isChatWaitingForUser
+        ? "lg:grid-cols-[1fr_720px]"
+        : "lg:grid-cols-[1fr_560px]"
+    }`}>
       {/* Main content */}
       <div className="flex flex-col gap-6">
         {/* Tasks — real queue only */}
