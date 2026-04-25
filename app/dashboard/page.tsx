@@ -1006,7 +1006,7 @@ function OverviewTab({
               { label: "📄 Create One-Sheet",     desc: "Artist media kit from Spotify data", doc: "one-sheet" as DocType },
               { label: "🔗 Pre-Save Link",        desc: "For upcoming release",               msg: "I have an upcoming release and need a pre-save strategy. Walk me through what to set up and how to promote it." },
               { label: "🛍️ Launch Merch Store",   desc: "Custom designs + fulfillment",       msg: "Help me launch a merch store. What products should I start with, which platform is best, and how do I promote it?" },
-              { label: "🎸 Find Open For Slots",  desc: "Submit for touring openers",         msg: "I want to find opportunities to open for touring acts. How do I identify shows in my genre and who do I contact?" },
+              { label: "🎸 Find Tour & Show Openings",  desc: "Get on local bills & tour supports",  msg: "I want to find opportunities to open for touring acts and get on local show bills. Who do I contact, how do I pitch myself, and what shows in my genre should I be targeting?" },
               { label: "🔍 Royalty Audit",        desc: "Compare recordings vs PRO registrations", royaltyAudit: true },
             ].map((action) => (
               <button
