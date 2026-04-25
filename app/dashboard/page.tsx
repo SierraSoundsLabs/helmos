@@ -947,7 +947,7 @@ function HelmChat({
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({
-  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks,
+  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks, chatPanelRef,
 }: {
   artistData: ArtistData;
   analysis: AnalysisResult;
@@ -961,6 +961,7 @@ function OverviewTab({
   isChatWaitingForUser?: boolean;
   onNewOpportunityCount?: (count: number) => void;
   realTasks?: { id: string; title: string; status: string; type: string }[];
+  chatPanelRef?: React.RefObject<HTMLDivElement>;
 }) {
   const stage = analysis.careerStage || "Emerging";
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
@@ -1105,7 +1106,7 @@ function OverviewTab({
       </div>
 
       {/* Right: Helm Agent panel */}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4" ref={chatPanelRef}>
         {isPaid ? (
           <HelmChat
             artistData={artistData}
@@ -2248,6 +2249,15 @@ function DashboardContent() {
   const [phase, setPhase] = useState<"loading-artist" | "loading-analysis" | "done" | "error">("loading-artist");
   const [errorMsg, setErrorMsg] = useState("");
   const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools">("overview");
+  const chatPanelRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
+
+  // Switch to overview tab and scroll chat panel into view
+  const focusChat = useCallback(() => {
+    setActiveTab("overview");
+    setTimeout(() => {
+      chatPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  }, []);
 
   // Auth / paid state
   const [isPaid, setIsPaid] = useState(false);
@@ -2348,8 +2358,8 @@ function DashboardContent() {
     if (!artistData || isChatStreaming) return;
     if (!isPaid) { handleSubscribe(); return; }
 
-    // Switch to overview tab so user can see the chat
-    setActiveTab("overview");
+    // Switch to overview tab and scroll chat into view
+    focusChat();
 
     const userMsg: ChatMessage = { role: "user", content: text };
     const newMessages = [...chatMessages, userMsg];
@@ -2466,7 +2476,7 @@ function DashboardContent() {
     if (!artistData) return;
     if (!isPaid) { handleSubscribe(); return; }
 
-    setActiveTab("overview");
+    focusChat();
 
     const openingMsg = "Let me make sure you're collecting every royalty you're owed. Quick check — a few yes/no questions.\n\n**Are you registered with a Performing Rights Organization (PRO)?**\n_(ASCAP, BMI, or SESAC in the US)_\n\nThese collect performance royalties every time your music plays on radio, TV, in bars, venues, or streaming. Yes or no?";
     setChatMessages(prev => [
@@ -2533,13 +2543,14 @@ function DashboardContent() {
       "pitch-email": "Playlist Pitch Email",
     };
 
-    // Gate: one-sheet and EPK require a saved bio first
+    // Gate: one-sheet requires a saved bio first
     if ((type === "one-sheet") && !hasSavedBio) {
       setChatMessages(prev => [
         ...prev,
         { role: "assistant", content: "Before I create your one-sheet, let's make sure it tells your story properly. A bio interview only takes 2 minutes and I'll use those answers to make everything much better.\n\nReady? Here's the first question:\n\n**Where are you from, and how did you get started in music?**" },
       ]);
-      setActiveTab("overview");
+      setIsChatWaitingForUser(true);
+      focusChat();
       return;
     }
 
@@ -2615,7 +2626,7 @@ function DashboardContent() {
     } finally {
       setGeneratingDoc(null);
     }
-  }, [artistData, chatMessages, hasSavedBio]);
+  }, [artistData, chatMessages, hasSavedBio, focusChat]);
 
   const loadDashboard = useCallback(async () => {
     if (!artistId) { router.push("/"); return; }
@@ -2913,6 +2924,7 @@ function DashboardContent() {
             isChatWaitingForUser={isChatWaitingForUser}
             onNewOpportunityCount={setOpportunityCount}
             realTasks={realTasks}
+            chatPanelRef={chatPanelRef}
           />
         )}
         {mode !== "queue" && activeTab === "works" && (
@@ -2920,8 +2932,8 @@ function DashboardContent() {
             artist={artistData}
             isPaid={isPaid}
             onSubscribe={handleSubscribe}
-            onSendChat={(msg) => { handleSendChat(msg); setActiveTab("overview"); }}
-            onRoyaltyAudit={() => { handleRoyaltyAudit(); setActiveTab("overview"); }}
+            onSendChat={(msg) => { handleSendChat(msg); }}
+            onRoyaltyAudit={() => { handleRoyaltyAudit(); }}
           />
         )}
         {mode !== "queue" && activeTab === "release" && (
@@ -2929,7 +2941,7 @@ function DashboardContent() {
             artist={artistData}
             isPaid={isPaid}
             onSubscribe={handleSubscribe}
-            onSendChat={(msg) => { handleSendChat(msg); setActiveTab("overview"); }}
+            onSendChat={(msg) => { handleSendChat(msg); }}
           />
         )}
         {mode !== "queue" && activeTab === "links" && (
