@@ -792,21 +792,30 @@ function PaidMediaModal({
 
 // ─── HELM CHAT (PAID) ─────────────────────────────────────────────────────────
 function HelmChat({
-  artistData, messages, onSend, isStreaming,
+  artistData, messages, onSend, isStreaming, isWaitingForUser,
 }: {
   artistData: ArtistData;
   messages: ChatMessage[];
   onSend: (text: string) => void;
   isStreaming: boolean;
+  isWaitingForUser?: boolean;
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
+
+  // Auto-focus input when Helm is waiting for user response
+  useEffect(() => {
+    if (isWaitingForUser && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isWaitingForUser]);
 
   const submit = () => {
     const text = input.trim();
@@ -828,7 +837,11 @@ function HelmChat({
             <div className="text-[10px] text-zinc-500 leading-tight">Your personal music manager</div>
           </div>
         </div>
-        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">ONLINE</span>
+        {isWaitingForUser ? (
+          <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full animate-pulse">YOUR TURN ↓</span>
+        ) : (
+          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">ONLINE</span>
+        )}
       </div>
 
       {/* Messages */}
@@ -900,6 +913,12 @@ function HelmChat({
       </div>
 
       {/* Input */}
+      {isWaitingForUser && (
+        <div className="mx-4 mb-0 mt-2 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center gap-2">
+          <span className="text-amber-400 text-xs animate-pulse">●</span>
+          <p className="text-xs text-amber-300 font-medium">Helm is waiting for your answer</p>
+        </div>
+      )}
       <div className="border-t border-[#1e1e1e] p-4 shrink-0">
         <div className="flex items-center gap-3 bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/50 transition-colors">
           <input
@@ -907,7 +926,8 @@ function HelmChat({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
-            placeholder="Ask Helm anything…"
+            ref={inputRef}
+            placeholder={isWaitingForUser ? "Type your answer…" : "Ask Helm anything…"}
             className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 outline-none"
             disabled={isStreaming}
           />
@@ -927,7 +947,7 @@ function HelmChat({
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({
-  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, onNewOpportunityCount, realTasks,
+  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks,
 }: {
   artistData: ArtistData;
   analysis: AnalysisResult;
@@ -938,6 +958,7 @@ function OverviewTab({
   onRoyaltyAudit: () => void;
   chatMessages: ChatMessage[];
   isChatStreaming: boolean;
+  isChatWaitingForUser?: boolean;
   onNewOpportunityCount?: (count: number) => void;
   realTasks?: { id: string; title: string; status: string; type: string }[];
 }) {
@@ -1091,6 +1112,7 @@ function OverviewTab({
             messages={chatMessages}
             onSend={onSendChat}
             isStreaming={isChatStreaming}
+            isWaitingForUser={isChatWaitingForUser}
           />
         ) : (
           // Pre-paid preview panel
@@ -2238,6 +2260,7 @@ function DashboardContent() {
   const [savedBioAt, setSavedBioAt] = useState<string | null>(null);
   const [hasSavedBio, setHasSavedBio] = useState(false);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
+  const [isChatWaitingForUser, setIsChatWaitingForUser] = useState(false);
 
   // Document modal
   const [docModal, setDocModal] = useState<{ content: string; title: string } | null>(null);
@@ -2332,6 +2355,8 @@ function DashboardContent() {
     const newMessages = [...chatMessages, userMsg];
     setChatMessages(newMessages);
     setIsChatStreaming(true);
+    setIsChatWaitingForUser(false);
+    let assistantContent = "";
 
     try {
       const res = await fetch("/api/helm/chat", {
@@ -2351,8 +2376,6 @@ function DashboardContent() {
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
-      let assistantContent = "";
-
       // Add empty assistant message that we'll stream into
       setChatMessages(prev => [...prev, { role: "assistant", content: "" }]);
 
@@ -2430,6 +2453,10 @@ function DashboardContent() {
       }
     } finally {
       setIsChatStreaming(false);
+      // Detect if assistant ended with a question — set waiting state
+      const cleanedContent = assistantContent.replace(/<[^>]+\/>/g, "").trim();
+      const endsWithQuestion = /[?]\s*$/.test(cleanedContent) || /[?]\s*[_*`]*\s*$/.test(cleanedContent);
+      setIsChatWaitingForUser(endsWithQuestion && cleanedContent.length > 0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artistData, chatMessages, isChatStreaming]);
@@ -2816,6 +2843,9 @@ function DashboardContent() {
                     {opportunityCount}
                   </span>
                 )}
+                {tab.id === "overview" && isChatWaitingForUser && activeTab !== "overview" && (
+                  <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Helm is waiting for your answer" />
+                )}
               </button>
             ))}
           </div>
@@ -2880,6 +2910,7 @@ function DashboardContent() {
             onRoyaltyAudit={handleRoyaltyAudit}
             chatMessages={chatMessages}
             isChatStreaming={isChatStreaming}
+            isChatWaitingForUser={isChatWaitingForUser}
             onNewOpportunityCount={setOpportunityCount}
             realTasks={realTasks}
           />
