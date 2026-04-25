@@ -64,5 +64,17 @@ export async function POST(req: NextRequest) {
   }
 
   const tasks = await createTasks(profile, [taskType]);
+
+  // Fire agent runner immediately — don't wait for 30-min cron
+  const baseUrl = req.nextUrl.origin;
+  const cronSecret = process.env.CRON_SECRET ?? "";
+  fetch(`${baseUrl}/api/agent/run`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {}),
+    },
+  }).catch(() => {});
+
   return NextResponse.json({ created: tasks.length, tasks });
 }

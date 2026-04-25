@@ -105,9 +105,13 @@ export async function POST(req: NextRequest) {
   // Fire first agent task immediately (don't wait for cron)
   // Run in background — don't block the response
   const baseUrl = req.nextUrl.origin;
+  const cronSecret = process.env.CRON_SECRET ?? "";
   fetch(`${baseUrl}/api/agent/run`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {}),
+    },
   }).catch(() => {}); // fire and forget
 
   return NextResponse.json({ ok: true, taskCount: tasks.length });
