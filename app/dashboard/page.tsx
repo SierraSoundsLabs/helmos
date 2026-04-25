@@ -846,6 +846,7 @@ function HelmChat({
             </div>
             <div className="flex flex-col gap-2 w-full mt-1">
               {[
+                { emoji: "✍️", label: "Write my artist bio", sub: "Interview-crafted, saves to Links" },
                 { emoji: "📄", label: "Make me a one-sheet", sub: "For booking agents & press" },
                 { emoji: "🚀", label: "Build a release plan", sub: "For my next drop" },
                 { emoji: "📰", label: "Write a press release", sub: "For my latest project" },
@@ -1237,6 +1238,7 @@ function ReleaseMarketingTab({
   onSendChat: (text: string) => void;
 }) {
   const items = [
+    { icon: "✍️", title: "Create Artist Bio",         desc: "Interview-crafted bio in 3 lengths — saved to your Links tab",                                                          msg: "Write my artist bio" },
     { icon: "🔗", title: "Pre-Save Campaign",       desc: "Create a pre-save link and run fan engagement before release day",                                                          msg: "Help me set up a pre-save campaign for my next release. What platform should I use, how do I set it up, and how do I promote it to maximize pre-saves?" },
     { icon: "📰", title: "Pitch Journalists",         desc: "Find real music journalists covering your genre and pitch your latest single or album",                                      msg: `Find 15 music journalists and editors who actively cover ${(artist.genres||[])[0]||"indie"} artists like ${artist.name}. For each journalist include: their name, publication, recent article they wrote, their email or contact method, and why ${artist.name}'s latest release is a fit for them. Then write a personalized pitch template I can use for each.` },
     { icon: "📣", title: "Press & Playlist Outreach",desc: "Pitch 10 journalists and 50 playlist curators in your genre 4 weeks out",                                                      msg: `Build a press and playlist outreach plan for ${artist.name}. I need: 10 journalist targets, 50 playlist curator targets in the ${(artist.genres||[])[0]||"my"} genre, and a pitch template for each.` },
