@@ -5,6 +5,7 @@ import { sendEmail, artistEmail, toSlug } from "@/lib/email";
 import { kvGet, kvSet } from "@/lib/kv";
 import type { ArtistData } from "@/lib/spotify";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
+import type { SavedBio } from "@/app/api/helm/bio/route";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -43,6 +44,9 @@ export async function POST(req: NextRequest) {
     .map(r => `${r.name} (${r.type}, ${r.releaseDate})`).join(", ");
   const topTracks = (artistData.topTracks || []).slice(0, 3).map(t => t.name).join(", ");
 
+  // Pull saved bio if available
+  const savedBio = await kvGet<SavedBio>(`helm:artist:${artistData.id}:bio`);
+
   const prompt = `You are a music industry outreach specialist writing on behalf of ${artistData.name}.
 
 ARTIST:
@@ -50,7 +54,7 @@ ARTIST:
 - Genres: ${(artistData.genres || []).join(", ") || "Unknown"}
 - Monthly Listeners: ${artistData.monthlyListenersFormatted || "—"}
 - Top Tracks: ${topTracks || "—"}
-- Recent Releases: ${releaseList || "None"}
+- Recent Releases: ${releaseList || "None"}${savedBio ? `\n- Artist Bio: ${savedBio.medium}` : ""}
 
 RECIPIENT: ${toName ? `${toName} <${toEmail}>` : toEmail}
 ${context ? `USER INSTRUCTIONS: ${context}` : ""}

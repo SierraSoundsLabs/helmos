@@ -2,7 +2,9 @@ import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { toSlug, artistEmail } from "@/lib/email";
+import { kvGet } from "@/lib/kv";
 import type { ArtistData } from "@/lib/spotify";
+import type { SavedBio } from "@/app/api/helm/bio/route";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -35,6 +37,12 @@ export async function POST(req: NextRequest) {
   const slug = toSlug(artistData.name);
   const fromEmail = artistEmail(slug);
 
+  // Pull saved bio if available
+  const savedBio = await kvGet<SavedBio>(`helm:artist:${artistData.id}:bio`);
+  const bioSection = savedBio
+    ? `\n- Artist Bio (medium): ${savedBio.medium}`
+    : "";
+
   const releaseList = (artistData.allReleases || []).slice(0, 8)
     .map(r => `  - ${r.name} (${r.type}, ${r.releaseDate})`).join("\n");
 
@@ -52,7 +60,7 @@ ARTIST PROFILE:
 - Top Tracks: ${topTracks || "—"}
 - Recent Releases:
 ${releaseList || "  No releases"}
-- Last Released: ${artistData.monthsAgoLastRelease != null ? `${artistData.monthsAgoLastRelease} months ago` : "Unknown"}
+- Last Released: ${artistData.monthsAgoLastRelease != null ? `${artistData.monthsAgoLastRelease} months ago` : "Unknown"}${bioSection}
 
 TARGETS to identify (mix of these roles based on the artist's genre and stage):
 - Music journalists / editors at blogs and publications covering this genre
