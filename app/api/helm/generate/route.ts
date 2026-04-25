@@ -47,7 +47,11 @@ Write a complete one-sheet in clean, formatted markdown. Include:
 
 Keep it tight. One page max. Suitable for sending to labels, booking agents, and press.`;
 
-    case "bio":
+    case "bio": {
+      const interviewAnswers = (artist.interviewAnswers as string | undefined) ?? "";
+      const interviewSection = interviewAnswers
+        ? `\nARTIST INTERVIEW ANSWERS:\n${interviewAnswers}\n`
+        : "";
       return `Write a professional artist bio for ${name}.
 
 ARTIST DATA:
@@ -57,14 +61,15 @@ ARTIST DATA:
 - Spotify Followers: ${followers}
 - Most-streamed track: ${top} (~${topStreams} streams)
 - Latest release: ${latestRelease?.name || "N/A"} (${latestRelease?.releaseDate || "N/A"})
-
+${interviewSection}
 Write THREE versions of the bio:
 
 **Short Bio (50 words)** — For social profiles, streaming platforms
 **Medium Bio (150 words)** — For press kits, booking inquiries
 **Long Bio (300 words)** — For label pitches, press releases, website
 
-Write in third person. Be compelling but authentic. Avoid clichés like "unique sound" or "genre-defying". Use the actual data (listeners, track names, release history) to make it specific and credible.`;
+Write in third person. Be compelling but authentic. Avoid clichés like "unique sound" or "genre-defying". Prioritize the artist's own words and story from the interview answers over generic Spotify stats. Make it specific and human.`;
+    }
 
     case "press-release":
       return `Write a professional press release for ${name}'s most recent release.
@@ -123,12 +128,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { type, artistData } = await req.json() as { type: DocType; artistData: Record<string, unknown> };
+  const { type, artistData, interviewAnswers } = await req.json() as {
+    type: DocType;
+    artistData: Record<string, unknown>;
+    interviewAnswers?: string;
+  };
   if (!type || !artistData) {
     return NextResponse.json({ error: "Missing type or artistData" }, { status: 400 });
   }
 
-  const prompt = getPrompt(type, artistData);
+  // Inject interview answers into artistData for bio generation
+  const enrichedData = interviewAnswers ? { ...artistData, interviewAnswers } : artistData;
+  const prompt = getPrompt(type, enrichedData);
 
   const msg = await client.messages.create({
     model: "claude-sonnet-4-5",
@@ -137,6 +148,26 @@ export async function POST(req: NextRequest) {
   });
 
   const content = msg.content[0].type === "text" ? msg.content[0].text : "";
+
+  // Auto-save bio to KV so it appears in the Links tab
+  if (type === "bio" && content && artistData.id) {
+    const bioPayload = {
+      artistId: artistData.id as string,
+      artistName: (artistData.name as string) ?? "Unknown",
+      content,
+      generatedFrom: interviewAnswers ? "interview" : "spotify-only",
+    };
+    // Fire-and-forget save
+    fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? "https://helmos.co"}/api/helm/bio`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Forward session cookie so auth passes
+        Cookie: `helm_session=${token}`,
+      },
+      body: JSON.stringify(bioPayload),
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ content, type });
 }

@@ -1296,15 +1296,18 @@ function artistSlugFromName(name: string): string {
 }
 
 function LinksTab({
-  artist, isPaid, onSendChat,
+  artist, isPaid, onSendChat, savedBioAt,
 }: {
   artist: ArtistData;
   isPaid: boolean;
   onSendChat: (text: string) => void;
+  savedBioAt?: string | null;
 }) {
   const [copiedLinks, setCopiedLinks] = useState<string | null>(null);
   const [copiedOneSheet, setCopiedOneSheet] = useState(false);
   const [published, setPublished] = useState<boolean | null>(null);
+  const [savedBio, setSavedBio] = useState<{ short: string; medium: string; savedAt: string } | null>(null);
+  const [copiedBio, setCopiedBio] = useState<string | null>(null);
 
   const slug = artistSlugFromName(artist.name);
   const linksUrl = `https://helmos.co/links/${slug}`;
@@ -1317,6 +1320,14 @@ function LinksTab({
       .then(r => { setPublished(r.ok); })
       .catch(() => setPublished(false));
   }, [slug]);
+
+  // Fetch saved bio
+  useEffect(() => {
+    fetch(`/api/helm/bio?artistId=${artist.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.bio) setSavedBio(data.bio); })
+      .catch(() => {});
+  }, [artist.id, savedBioAt]);
 
   const copyToClipboard = (text: string, which: "links" | "onesheet") => {
     navigator.clipboard.writeText(text).catch(() => {});
@@ -1420,6 +1431,75 @@ function LinksTab({
               className="w-full px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
             >
               Generate One-Sheet →
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Artist Bio card */}
+      <div className={`rounded-xl p-5 border ${savedBio ? "bg-[#111] border-[#1e1e1e]" : "border-dashed border-[#2e2e2e] bg-[#0d0d0d]"}`}>
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Artist Bio</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">{savedBio ? `Last updated ${new Date(savedBio.savedAt).toLocaleDateString()}` : "Interview-crafted bio for press kits & profiles"}</p>
+          </div>
+          {savedBio && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full shrink-0">SAVED</span>}
+        </div>
+        {savedBio ? (
+          <div className="flex flex-col gap-3">
+            <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3">
+              <p className="text-[10px] text-zinc-500 mb-1.5 uppercase tracking-wider">Short (50 words)</p>
+              <p className="text-xs text-zinc-300 leading-relaxed">{savedBio.short}</p>
+            </div>
+            <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3">
+              <p className="text-[10px] text-zinc-500 mb-1.5 uppercase tracking-wider">Medium (150 words)</p>
+              <p className="text-xs text-zinc-300 leading-relaxed line-clamp-4">{savedBio.medium}</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(savedBio.short).catch(() => {});
+                  setCopiedBio("short");
+                  setTimeout(() => setCopiedBio(null), 2000);
+                }}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  copiedBio === "short" ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e]"
+                }`}
+              >
+                {copiedBio === "short" ? "Copied!" : "Copy Short"}
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(savedBio.medium).catch(() => {});
+                  setCopiedBio("medium");
+                  setTimeout(() => setCopiedBio(null), 2000);
+                }}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  copiedBio === "medium" ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e]"
+                }`}
+              >
+                {copiedBio === "medium" ? "Copied!" : "Copy Medium"}
+              </button>
+              <button
+                onClick={() => onSendChat("Rewrite my bio with updated information")}
+                className="px-3 py-2 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="text-center py-4">
+              <p className="text-2xl mb-2">✍️</p>
+              <p className="text-sm font-semibold text-white mb-1">Create Your Artist Bio</p>
+              <p className="text-xs text-zinc-500">Helm will interview you to craft a bio that actually sounds like you</p>
+            </div>
+            <button
+              onClick={() => onSendChat("Write my artist bio")}
+              className="w-full px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
+            >
+              Start Bio Interview →
             </button>
           </div>
         )}
@@ -2152,6 +2232,7 @@ function DashboardContent() {
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [savedBioAt, setSavedBioAt] = useState<string | null>(null);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
 
   // Document modal
@@ -2448,21 +2529,34 @@ function DashboardContent() {
         return;
       }
 
+      // For bio: extract interview answers from recent chat history
+      let interviewAnswers: string | undefined;
+      if (type === "bio") {
+        const userAnswers = chatMessages
+          .filter(m => m.role === "user")
+          .slice(-6) // last 6 user messages = likely the 5 interview answers
+          .map(m => m.content)
+          .join("\n");
+        if (userAnswers.trim()) interviewAnswers = userAnswers;
+      }
+
       const res = await fetch("/api/helm/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, artistData }),
+        body: JSON.stringify({ type, artistData, interviewAnswers }),
       });
       const data = await res.json();
       if (data.content) {
         setDocModal({ content: data.content, title: titles[type] });
+        // Notify links tab that bio was saved
+        if (type === "bio") setSavedBioAt(new Date().toISOString());
       }
     } catch (e) {
       console.error("Generate error", e);
     } finally {
       setGeneratingDoc(null);
     }
-  }, [artistData]);
+  }, [artistData, chatMessages]);
 
   const loadDashboard = useCallback(async () => {
     if (!artistId) { router.push("/"); return; }
@@ -2780,6 +2874,7 @@ function DashboardContent() {
             artist={artistData}
             isPaid={isPaid}
             onSendChat={handleSendChat}
+            savedBioAt={savedBioAt}
           />
         )}
         {mode !== "queue" && activeTab === "outreach" && (
