@@ -7,6 +7,7 @@ import type { ArtistData } from "@/lib/spotify";
 import type { SavedBio } from "@/app/api/helm/bio/route";
 import type { LiveShowProfile } from "@/app/api/helm/live-show-profile/route";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
+import { getBITPastEvents, getBITUpcomingEvents, formatShowHistory } from "@/lib/bandsintown";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -57,10 +58,22 @@ export async function POST(req: NextRequest) {
   const fromEmail = artistEmail(slug);
   const fromDisplay = `${artistData.name} <${fromEmail}>`;
 
-  // Pull saved bio and live show profile
-  const savedBio = await kvGet<SavedBio>(`helm:artist:${artistData.id}:bio`);
-  const liveShow = await kvGet<LiveShowProfile>(`helm:artist:${artistData.id}:live-show`);
+  // Pull saved bio, live show profile, and real Bandsintown show history in parallel
+  const [savedBio, liveShow, pastEvents, upcomingEvents] = await Promise.all([
+    kvGet<SavedBio>(`helm:artist:${artistData.id}:bio`),
+    kvGet<LiveShowProfile>(`helm:artist:${artistData.id}:live-show`),
+    getBITPastEvents(artistData.name, 15),
+    getBITUpcomingEvents(artistData.name),
+  ]);
+
   const bioContext = savedBio ? `\nArtist Bio: ${savedBio.medium}` : "";
+  const showHistory = formatShowHistory(pastEvents);
+  const bandsintownContext = showHistory
+    ? `\nVerified Past Shows (from Bandsintown — use these as real credentials):\n${showHistory}`
+    : "";
+  const upcomingContext = upcomingEvents.length
+    ? `\nUpcoming Shows: ${upcomingEvents.map(e => `${new Date(e.datetime).toLocaleDateString("en-US", {month:"short",day:"numeric",year:"numeric"})}: ${e.venue?.name}, ${e.venue?.city}`).join(" | ")}`
+    : "";
 
   // Merge saved live show profile with context from current chat session
   const liveShowContext = [
@@ -83,12 +96,12 @@ ARTIST PROFILE (use ONLY this real data — never invent credentials):
 - From: ${fromEmail}
 - Genres: ${genres}
 - Monthly Listeners: ${listeners}
-- Top Tracks: ${topTracks}${bioContext}
+- Top Tracks: ${topTracks}${bioContext}${bandsintownContext}${upcomingContext}
 ${liveShowContext ? `
-ARTIST-PROVIDED LIVE SHOW DETAILS (treat as ground truth — use verbatim in pitches):
+ARTIST-PROVIDED ADDITIONAL DETAILS:
 ${liveShowContext}` : ""}
 
-CRITICAL: Only reference credentials the artist explicitly provided above. Never invent past venues played, ticket numbers, press quotes, or tour history that isn't stated here. If a credential isn't provided, omit it rather than fabricate it.
+CRITICAL: Only reference credentials listed above. The 'Verified Past Shows' section comes from Bandsintown and is 100% real — use these freely. Never invent past venues, ticket numbers, press quotes, or tour history not listed here. If a credential isn't provided, omit it rather than fabricate it.
 
 Your job: Find ${remaining} real, bookable targets in ${city} and write a personalized pitch for each.
 
