@@ -6,7 +6,6 @@ import { kvGet, kvSet } from "@/lib/kv";
 import type { ArtistData } from "@/lib/spotify";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import type { SavedBio } from "@/app/api/helm/bio/route";
-import { verifyEmail } from "@/lib/hunter";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -90,16 +89,6 @@ Return ONLY the JSON object, no other text.`;
   } catch (e) {
     console.error("chat-send generate error:", e);
     return NextResponse.json({ error: "Failed to generate email" }, { status: 500 });
-  }
-
-  // Verify email via Hunter before sending
-  const verification = await verifyEmail(toEmail);
-  if (verification !== null && !verification.valid) {
-    return NextResponse.json({
-      status: "failed",
-      reason: `Email address could not be verified (Hunter score: ${verification.score}, status: ${verification.status}). Try a different address or contact them via social media.`,
-      to: toEmail,
-    });
   }
 
   // Send via Resend
