@@ -1088,7 +1088,7 @@ function OverviewTab({
               );
             })}
             <button
-              onClick={() => isPaid ? onGenerate("one-sheet") : onSubscribe()}
+              onClick={() => isPaid ? onSendChat(`Build me a full artist research report for ${artistData.name}. Include: career stage assessment, Spotify growth trajectory, top tracks analysis, genre positioning, press coverage gaps, playlist placement opportunities, and the 3 highest-leverage moves they should make in the next 90 days.`) : onSubscribe()}
               className="flex items-center gap-3 p-3 bg-[#111] border border-[#6366f1]/30 rounded-xl hover:border-[#6366f1]/60 transition-colors text-left w-full"
             >
               <div className="w-8 h-8 rounded-lg bg-[#6366f1]/20 border border-[#6366f1]/30 flex items-center justify-center shrink-0">
