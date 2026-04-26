@@ -5,6 +5,7 @@ import { sendEmail, artistEmail, toSlug } from "@/lib/email";
 import { kvGet, kvSet } from "@/lib/kv";
 import type { ArtistData } from "@/lib/spotify";
 import type { SavedBio } from "@/app/api/helm/bio/route";
+import type { LiveShowProfile } from "@/app/api/helm/live-show-profile/route";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -56,9 +57,19 @@ export async function POST(req: NextRequest) {
   const fromEmail = artistEmail(slug);
   const fromDisplay = `${artistData.name} <${fromEmail}>`;
 
-  // Pull saved bio if available
+  // Pull saved bio and live show profile
   const savedBio = await kvGet<SavedBio>(`helm:artist:${artistData.id}:bio`);
+  const liveShow = await kvGet<LiveShowProfile>(`helm:artist:${artistData.id}:live-show`);
   const bioContext = savedBio ? `\nArtist Bio: ${savedBio.medium}` : "";
+
+  // Merge saved live show profile with context from current chat session
+  const liveShowContext = [
+    liveShow?.credentials ? `Past credentials: ${liveShow.credentials}` : "",
+    liveShow?.showDescription ? `Live show: ${liveShow.showDescription}` : "",
+    liveShow?.bookingGoal ? `Looking for: ${liveShow.bookingGoal}` : "",
+    liveShow?.wishList ? `Targets of interest: ${liveShow.wishList}` : "",
+    context || "",
+  ].filter(Boolean).join("\n") || context;
 
   const genres = (artistData.genres || []).join(", ") || "indie";
   const topTracks = (artistData.topTracks || []).slice(0, 3).map(t => t.name).join(", ");
@@ -67,13 +78,17 @@ export async function POST(req: NextRequest) {
   // Step 1: Research targets and draft pitches in one call
   const researchPrompt = `You are a music industry booking specialist helping an independent artist get booked for shows in ${city}.
 
-ARTIST PROFILE:
+ARTIST PROFILE (use ONLY this real data — never invent credentials):
 - Name: ${artistData.name}
 - From: ${fromEmail}
 - Genres: ${genres}
 - Monthly Listeners: ${listeners}
 - Top Tracks: ${topTracks}${bioContext}
-${context ? `- Additional context: ${context}` : ""}
+${liveShowContext ? `
+ARTIST-PROVIDED LIVE SHOW DETAILS (treat as ground truth — use verbatim in pitches):
+${liveShowContext}` : ""}
+
+CRITICAL: Only reference credentials the artist explicitly provided above. Never invent past venues played, ticket numbers, press quotes, or tour history that isn't stated here. If a credential isn't provided, omit it rather than fabricate it.
 
 Your job: Find ${remaining} real, bookable targets in ${city} and write a personalized pitch for each.
 
@@ -85,7 +100,7 @@ Target types to research (mix based on artist's stage):
 For each target, write a SHORT pitch email (under 120 words) that:
 - References something specific about that band/venue/promoter
 - Makes a clear ask (co-headline, opener slot, venue booking, representation)
-- Mentions ${artistData.name}'s strongest credential (listeners, top track, recent release)
+- Uses ONLY the artist credentials provided above — no invented history
 - Sounds human, not templated
 
 Return a JSON array of exactly ${remaining} objects:

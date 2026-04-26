@@ -2473,6 +2473,14 @@ function DashboardContent() {
         const context = bookShowsMatch[2] || "";
         // Show a working message
         setChatMessages(prev => [...prev, { role: "assistant", content: `🔍 Researching ${city} — finding bands, venues, and promoters in your genre, drafting pitches, and sending outreach. This takes ~30 seconds. Results will appear in your Outreach tab.` }]);
+        // Save live show context for future outreach sessions
+        if (context) {
+          fetch("/api/helm/live-show-profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ artistId: artistData.id, raw: context, targetCities: city, credentials: context, showDescription: "", bookingGoal: "", wishList: "" }),
+          }).catch(() => {});
+        }
         fetch("/api/helm/booking-outreach", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
