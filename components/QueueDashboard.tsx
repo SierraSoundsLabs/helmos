@@ -73,6 +73,7 @@ function TaskCard({ task, onView, onRetry }: { task: Task; onView: (t: Task) => 
   const isRunning = task.status === "running";
   const isDone = task.status === "completed";
   const isStuck = task.status === "pending" || task.status === "failed";
+  const [retrying, setRetrying] = useState(false);
 
   return (
     <div className={`p-4 rounded-xl border transition-all ${
@@ -127,10 +128,15 @@ function TaskCard({ task, onView, onRetry }: { task: Task; onView: (t: Task) => 
 
           {isStuck && (
             <button
-              onClick={() => onRetry(task.id)}
-              className="mt-2 text-[11px] font-medium text-amber-400 hover:text-amber-300 transition-colors"
+              onClick={async () => {
+                setRetrying(true);
+                await onRetry(task.id);
+                setRetrying(false);
+              }}
+              disabled={retrying}
+              className="mt-2 text-[11px] font-medium text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              ↻ Run now
+              {retrying ? "Starting…" : "↻ Run now"}
             </button>
           )}
 

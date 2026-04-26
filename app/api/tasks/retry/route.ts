@@ -7,7 +7,7 @@ import type { Task } from "@/lib/tasks";
 // Re-queues a stuck/failed task and fires the agent runner immediately
 export async function POST(req: NextRequest) {
   const session = getSession(req);
-  if (!session?.paid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { taskId } = await req.json() as { taskId: string };
   if (!taskId) return NextResponse.json({ error: "taskId required" }, { status: 400 });
