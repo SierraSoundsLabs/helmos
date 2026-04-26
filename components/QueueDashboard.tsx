@@ -191,17 +191,27 @@ export default function QueueDashboard({
   }, [fetchTasks]);
 
   const handleRetry = useCallback(async (taskId: string) => {
+    // Optimistically show as running
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "running" as const } : t));
     try {
-      await fetch("/api/tasks/retry", {
+      const res = await fetch("/api/tasks/retry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ taskId }),
       });
-      // Optimistically update status
+      const data = await res.json();
+      if (data.status === "completed") {
+        // Task ran inline — refresh immediately to show result
+        await fetchTasks();
+      } else {
+        // Fallback: poll a few times
+        setTimeout(fetchTasks, 3000);
+        setTimeout(fetchTasks, 8000);
+      }
+    } catch {
+      // Revert on error
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "pending" as const } : t));
-      // Refresh after a short delay to get real status
-      setTimeout(fetchTasks, 3000);
-    } catch { /* ignore */ }
+    }
   }, [fetchTasks]);
 
   useEffect(() => {
