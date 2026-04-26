@@ -2437,6 +2437,7 @@ function DashboardContent() {
       const cleanContent = assistantContent
         .replace(/<generate[^/]*\/>/g, "")
         .replace(/<send-email[^/]*\/>/g, "")
+        .replace(/<book-shows[^/]*\/>/g, "")
         .trim();
       if (cleanContent !== assistantContent.trim()) {
         setChatMessages(prev => {
@@ -2462,6 +2463,34 @@ function DashboardContent() {
           setChatMessages(prev => [...prev, { role: "assistant", content: statusMsg }]);
         }).catch(() => {
           setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Something went wrong sending the email. Please try the Outreach tab.` }]);
+        });
+      }
+
+      // Handle book-shows tag
+      const bookShowsMatch = assistantContent.match(/<book-shows\s+city="([^"]+)"(?:\s+context="([^"]*)")?\/>/i);
+      if (bookShowsMatch && artistData) {
+        const city = bookShowsMatch[1];
+        const context = bookShowsMatch[2] || "";
+        // Show a working message
+        setChatMessages(prev => [...prev, { role: "assistant", content: `🔍 Researching ${city} — finding bands, venues, and promoters in your genre, drafting pitches, and sending outreach. This takes ~30 seconds. Results will appear in your Outreach tab.` }]);
+        fetch("/api/helm/booking-outreach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ artistData, city, context }),
+        }).then(r => r.json()).then(data => {
+          if (data.ok) {
+            const msg = `✅ **${city} booking outreach complete**\n\n` +
+              `Contacted ${data.sent} ${data.sent === 1 ? "target" : "targets"}${data.failed > 0 ? ` (${data.failed} failed)` : ""}:\n\n` +
+              (data.targets || []).slice(0, data.sent).map((t: {name: string; type: string; rationale: string}) =>
+                `• **${t.name}** (${t.type}) — ${t.rationale}`
+              ).join("\n") +
+              `\n\nAll pitches sent from ${data.fromEmail}. Check the **Outreach tab** to track replies.`;
+            setChatMessages(prev => [...prev, { role: "assistant", content: msg }]);
+          } else {
+            setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Booking outreach failed: ${data.error || "Unknown error"}. Try again or use the Outreach tab manually.` }]);
+          }
+        }).catch(() => {
+          setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Something went wrong with booking outreach. Please try again.` }]);
         });
       }
 
