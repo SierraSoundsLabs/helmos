@@ -2481,6 +2481,10 @@ function DashboardContent() {
             body: JSON.stringify({ artistId: artistData.id, raw: context, targetCities: city, credentials: context, showDescription: "", bookingGoal: "", wishList: "" }),
           }).catch(() => {});
         }
+        // Immediately refresh task list so task bar shows "running"
+        fetch(`/api/tasks?artist=${artistData.id}`)
+          .then(r => r.json()).then(d => { if (d.tasks) setRealTasks(d.tasks); })
+          .catch(() => {});
         fetch("/api/helm/booking-outreach", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2494,8 +2498,16 @@ function DashboardContent() {
               ).join("\n") +
               `\n\nAll pitches sent from ${data.fromEmail}. Check the **Outreach tab** to track replies.`;
             setChatMessages(prev => [...prev, { role: "assistant", content: msg }]);
+            // Refresh task list to show completed state
+            fetch(`/api/tasks?artist=${artistData.id}`)
+              .then(r => r.json()).then(d => { if (d.tasks) setRealTasks(d.tasks); })
+              .catch(() => {});
           } else {
             setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Booking outreach failed: ${data.error || "Unknown error"}. Try again or use the Outreach tab manually.` }]);
+            // Refresh tasks to show failed state
+            fetch(`/api/tasks?artist=${artistData.id}`)
+              .then(r => r.json()).then(d => { if (d.tasks) setRealTasks(d.tasks); })
+              .catch(() => {});
           }
         }).catch(() => {
           setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Something went wrong with booking outreach. Please try again.` }]);

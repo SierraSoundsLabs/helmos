@@ -10,7 +10,8 @@ export type TaskType =
   | "press_release"
   | "content_calendar"
   | "artist_bio"
-  | "sync_pitch";
+  | "sync_pitch"
+  | "booking_outreach";
 
 export type TaskStatus = "pending" | "running" | "completed" | "failed";
 
@@ -101,6 +102,13 @@ export const TASK_DEFS: Record<TaskType, Omit<Task, "id" | "userId" | "artistId"
     icon: "🎬",
     agentName: "Sync Agent",
     estimatedMinutes: 10,
+  },
+  booking_outreach: {
+    title: "Show booking outreach",
+    description: "Researching venues, bands, and promoters — drafting and sending personalized booking pitches",
+    icon: "🎤",
+    agentName: "Booking Agent",
+    estimatedMinutes: 1,
   },
 };
 

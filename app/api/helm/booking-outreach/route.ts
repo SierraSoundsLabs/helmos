@@ -8,6 +8,8 @@ import type { SavedBio } from "@/app/api/helm/bio/route";
 import type { LiveShowProfile } from "@/app/api/helm/live-show-profile/route";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import { getBITPastEvents, getBITUpcomingEvents, formatShowHistory } from "@/lib/bandsintown";
+import { TASK_DEFS } from "@/lib/tasks";
+import type { Task } from "@/lib/tasks";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -43,6 +45,32 @@ export async function POST(req: NextRequest) {
   if (!artistData || !city) {
     return NextResponse.json({ error: "artistData and city required" }, { status: 400 });
   }
+
+  // Create a task in KV so it shows in the task bar
+  const taskId = `task_${Date.now()}_booking`;
+  const userId = artistData.id;
+  const bookingTask: Task = {
+    id: taskId,
+    userId,
+    artistId: artistData.id,
+    type: "booking_outreach",
+    status: "running",
+    priority: 0,
+    input: { city, context },
+    output: null,
+    outputJson: null,
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    createdAt: new Date().toISOString(),
+    error: null,
+    ...TASK_DEFS.booking_outreach,
+    title: `Show booking outreach — ${city}`,
+  };
+  const taskKey = `helm:task:${taskId}`;
+  const userTasksKey = `helm:user:${userId}:tasks`;
+  await kvSet(taskKey, bookingTask, 60 * 60 * 24 * 90);
+  const existingTaskIds = (await kvGet<string[]>(userTasksKey)) ?? [];
+  await kvSet(userTasksKey, [taskId, ...existingTaskIds], 60 * 60 * 24 * 90);
 
   // Check daily send limit
   const today = new Date().toISOString().split("T")[0];
@@ -187,6 +215,16 @@ Use real venues, real bands, and realistic emails. Return ONLY the JSON array.`;
 
   await kvSet(idsKey, [...newIds, ...existingIds]);
   if (sent > 0) await kvSet(countKey, currentCount + sent, 90000);
+
+  // Mark task as completed
+  const completedTask: Task = {
+    ...bookingTask,
+    status: sent > 0 ? "completed" : "failed",
+    completedAt: new Date().toISOString(),
+    output: `Contacted ${sent} targets in ${city}. ${failed > 0 ? `${failed} failed.` : ""} Sent from ${fromEmail}.`,
+    error: sent === 0 ? "All sends failed" : null,
+  };
+  await kvSet(taskKey, completedTask, 60 * 60 * 24 * 90);
 
   return NextResponse.json({
     ok: true,
