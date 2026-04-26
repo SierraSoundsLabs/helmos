@@ -29,8 +29,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing artist data" }, { status: 400 });
   }
 
-  // Return cached analysis if available — avoids re-scanning on every login
-  const cacheKey = `helm:analysis:${artistData.id}`;
+  // Cache key includes latest release so it auto-busts when a new song drops
+  const latestSlug = artistData.latestRelease?.name
+    ? artistData.latestRelease.name.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20)
+    : "none";
+  const cacheKey = `helm:analysis:${artistData.id}:${latestSlug}`;
   try {
     const cached = await kvGet(cacheKey);
     if (cached) {
