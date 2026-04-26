@@ -26,17 +26,20 @@ export async function GET(req: NextRequest) {
       if (res.ok) {
         const data = await res.json();
         const songLower = songName.toLowerCase().trim();
-        const artistFirst = artistName.toLowerCase().split(" ")[0];
-        // Try exact match first, then fuzzy
+        const artistLower = artistName.toLowerCase().trim();
+        const artistFirst = artistLower.split(" ")[0];
+        // Require BOTH track name AND artist to match — no blind fallback
         const match = (data.results || []).find((r: Record<string, string>) => {
           const trackName = (r.trackName || "").toLowerCase().trim();
-          const artist = (r.artistName || "").toLowerCase();
-          return trackName === songLower && artist.includes(artistFirst);
+          const artist = (r.artistName || "").toLowerCase().trim();
+          // Exact match on both
+          return trackName === songLower && (artist === artistLower || artist.includes(artistFirst));
         }) || (data.results || []).find((r: Record<string, string>) => {
           const trackName = (r.trackName || "").toLowerCase().trim();
-          const artist = (r.artistName || "").toLowerCase();
-          return trackName.includes(songLower) && artist.includes(artistFirst);
-        }) || (data.results || [])[0]; // fallback to first result if artist matches at all
+          const artist = (r.artistName || "").toLowerCase().trim();
+          // Fuzzy track name but strict artist
+          return trackName.includes(songLower) && (artist === artistLower || artist.includes(artistFirst));
+        });
         if (match?.trackViewUrl) {
           // Keep ?i= track ID param, only strip uo= tracking param
           const url = new URL(match.trackViewUrl);
