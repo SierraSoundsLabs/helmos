@@ -171,6 +171,7 @@ export default function QueueDashboard({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeResult, setActiveResult] = useState<Task | null>(null);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -303,9 +304,37 @@ export default function QueueDashboard({
         )}
 
         <div className="flex flex-col gap-2.5">
-          {tasks.map(task => (
+          {/* Active tasks: running + pending + failed */}
+          {tasks.filter(t => t.status !== "completed").map(task => (
             <TaskCard key={task.id} task={task} onView={setActiveResult} onRetry={handleRetry} />
           ))}
+
+          {/* Completed tasks: collapsed by default */}
+          {completed.length > 0 && (
+            <>
+              <button
+                onClick={() => setCompletedExpanded(p => !p)}
+                className="flex items-center justify-between w-full px-4 py-2.5 rounded-xl bg-[#0d0d0d] border border-[#1a1a1a] hover:border-[#2a2a2a] transition-colors text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="text-xs font-medium text-zinc-400">
+                    {completed.length} completed {completed.length === 1 ? "task" : "tasks"}
+                  </span>
+                </div>
+                <span className="text-[10px] text-zinc-600">{completedExpanded ? "Hide ▲" : "Show results ▼"}</span>
+              </button>
+
+              {completedExpanded && (
+                <div className="flex flex-col gap-2.5">
+                  {completed.map(task => (
+                    <TaskCard key={task.id} task={task} onView={setActiveResult} onRetry={handleRetry} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
           {tasks.length === 0 && (
             <div className="text-center py-12 text-zinc-600 text-sm">
               No tasks yet. Complete intake to start your agent queue.
