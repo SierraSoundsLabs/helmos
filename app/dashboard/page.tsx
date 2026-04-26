@@ -1372,6 +1372,8 @@ function artistSlugFromName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+interface SongLinkEntry { id: string; songName: string; albumArt?: string; spotifyUrl?: string; updatedAt: string; }
+
 function LinksTab({
   artist, isPaid, onSendChat, savedBioAt,
 }: {
@@ -1385,6 +1387,12 @@ function LinksTab({
   const [published, setPublished] = useState<boolean | null>(null);
   const [savedBio, setSavedBio] = useState<{ short: string; medium: string; savedAt: string } | null>(null);
   const [copiedBio, setCopiedBio] = useState<string | null>(null);
+  const [songLinks, setSongLinks] = useState<SongLinkEntry[]>([]);
+  const [showSongForm, setShowSongForm] = useState(false);
+  const [songFormRelease, setSongFormRelease] = useState<{name:string;albumArt?:string;spotifyUrl?:string;releaseDate?:string;type?:string} | null>(null);
+  const [songFormExtra, setSongFormExtra] = useState({ appleMusicUrl: "", youtubeUrl: "", presaveUrl: "", bio: "" });
+  const [songFormSaving, setSongFormSaving] = useState(false);
+  const [copiedSongLink, setCopiedSongLink] = useState<string | null>(null);
 
   const slug = artistSlugFromName(artist.name);
   const linksUrl = `https://helmos.co/links/${slug}`;
@@ -1405,6 +1413,15 @@ function LinksTab({
       .then(data => { if (data?.bio) setSavedBio(data.bio); })
       .catch(() => {});
   }, [artist.id, savedBioAt]);
+
+  // Fetch song links
+  useEffect(() => {
+    if (!isPaid) return;
+    fetch(`/api/helm/song-link?artistId=${artist.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.links) setSongLinks(data.links); })
+      .catch(() => {});
+  }, [artist.id, isPaid]);
 
   const copyToClipboard = (text: string, which: "links" | "onesheet") => {
     navigator.clipboard.writeText(text).catch(() => {});
@@ -1578,6 +1595,163 @@ function LinksTab({
             >
               Start Bio Interview →
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* Song Smart Links card */}
+      <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Song Smart Links</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">One link to every streaming platform for a specific track</p>
+          </div>
+          <button
+            onClick={() => { setShowSongForm(true); setSongFormRelease(null); setSongFormExtra({ appleMusicUrl: "", youtubeUrl: "", presaveUrl: "", bio: "" }); }}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
+          >
+            + Create Link
+          </button>
+        </div>
+
+        {/* Existing song links */}
+        {songLinks.length > 0 && (
+          <div className="flex flex-col gap-2 mb-4">
+            {songLinks.map(sl => {
+              const url = `https://helmos.co/s/${artistSlugFromName(artist.name)}/${sl.id.split("-").slice(artistSlugFromName(artist.name).split("-").length).join("-")}`;
+              return (
+                <div key={sl.id} className="flex items-center gap-3 p-3 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg">
+                  {sl.albumArt
+                    ? <img src={sl.albumArt} alt={sl.songName} className="w-8 h-8 rounded object-cover shrink-0" />
+                    : <span className="text-lg shrink-0">🎵</span>}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-white truncate">{sl.songName}</p>
+                    <p className="text-[10px] text-zinc-500 truncate font-mono">{url}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(url).catch(() => {});
+                      setCopiedSongLink(sl.id);
+                      setTimeout(() => setCopiedSongLink(null), 2000);
+                    }}
+                    className={`px-2.5 py-1 rounded text-[10px] font-medium transition-colors shrink-0 ${
+                      copiedSongLink === sl.id ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e]"
+                    }`}
+                  >
+                    {copiedSongLink === sl.id ? "Copied!" : "Copy"}
+                  </button>
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="px-2.5 py-1 rounded text-[10px] font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors shrink-0">
+                    View
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {songLinks.length === 0 && !showSongForm && (
+          <div className="text-center py-4">
+            <p className="text-xs text-zinc-500">No song links yet. Create one for your latest release.</p>
+          </div>
+        )}
+
+        {/* Create form */}
+        {showSongForm && (
+          <div className="flex flex-col gap-3 border-t border-[#1e1e1e] pt-4">
+            <p className="text-xs font-semibold text-white">Pick a release to create a link for:</p>
+            <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+              {(artist.allReleases || []).slice(0, 10).map((r, i) => (
+                <button
+                  key={r.id || i}
+                  onClick={() => setSongFormRelease({ name: r.name, albumArt: r.albumArt, spotifyUrl: r.spotifyUrl, releaseDate: r.releaseDate, type: r.type })}
+                  className={`flex items-center gap-3 p-2.5 rounded-lg border text-left transition-colors ${
+                    songFormRelease?.name === r.name
+                      ? "border-[#6366f1]/50 bg-[#6366f1]/10"
+                      : "border-[#1e1e1e] bg-[#0d0d0d] hover:border-[#2e2e2e]"
+                  }`}
+                >
+                  {r.albumArt
+                    ? <img src={r.albumArt} alt={r.name} className="w-8 h-8 rounded object-cover shrink-0" />
+                    : <span className="text-lg">🎵</span>}
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-white truncate">{r.name}</p>
+                    <p className="text-[10px] text-zinc-500 capitalize">{r.type} · {r.releaseDate}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {songFormRelease && (
+              <div className="flex flex-col gap-2 mt-1">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Streaming links (optional)</p>
+                {[
+                  { key: "appleMusicUrl" as const, placeholder: "Apple Music URL", icon: "🍎" },
+                  { key: "youtubeUrl" as const, placeholder: "YouTube URL", icon: "▶️" },
+                  { key: "presaveUrl" as const, placeholder: "Pre-Save URL (if upcoming)", icon: "🔔" },
+                ].map(({ key, placeholder, icon }) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-sm shrink-0">{icon}</span>
+                    <input
+                      type="url"
+                      placeholder={placeholder}
+                      value={songFormExtra[key]}
+                      onChange={e => setSongFormExtra(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="flex-1 bg-[#0d0d0d] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50"
+                    />
+                  </div>
+                ))}
+                <input
+                  type="text"
+                  placeholder="Short song description (optional)"
+                  value={songFormExtra.bio}
+                  onChange={e => setSongFormExtra(prev => ({ ...prev, bio: e.target.value }))}
+                  className="bg-[#0d0d0d] border border-[#2e2e2e] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#6366f1]/50"
+                />
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => { setShowSongForm(false); setSongFormRelease(null); }}
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!songFormRelease || songFormSaving}
+                onClick={async () => {
+                  if (!songFormRelease) return;
+                  setSongFormSaving(true);
+                  try {
+                    const res = await fetch("/api/helm/song-link", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        artistId: artist.id,
+                        artistName: artist.name,
+                        songName: songFormRelease.name,
+                        albumArt: songFormRelease.albumArt,
+                        spotifyUrl: songFormRelease.spotifyUrl,
+                        releaseDate: songFormRelease.releaseDate,
+                        releaseType: songFormRelease.type,
+                        ...songFormExtra,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                      setSongLinks(prev => [data.link, ...prev.filter((s: SongLinkEntry) => s.id !== data.link.id)]);
+                      setShowSongForm(false);
+                      setSongFormRelease(null);
+                    }
+                  } finally {
+                    setSongFormSaving(false);
+                  }
+                }}
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+              >
+                {songFormSaving ? "Creating…" : "Create Smart Link →"}
+              </button>
+            </div>
           </div>
         )}
       </div>
