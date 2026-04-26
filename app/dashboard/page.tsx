@@ -1232,6 +1232,49 @@ function WorksTab({
         </div>
       </div>
 
+      {/* Most recent release — expanded card with contextual tasks */}
+      {releases.length > 0 && (() => {
+        const latest = releases[0];
+        const releaseTasks = [
+          { icon: "📰", label: "Press Release", msg: `Write a press release for ${artist.name}'s release "${latest.name}" (${latest.type}, ${latest.releaseDate}). Make it press-ready for music blogs and journalists.` },
+          { icon: "🎵", label: "Playlist Pitch", msg: `Write a playlist curator pitch email for "${latest.name}" by ${artist.name}. Target curators in the ${(artist.genres||[])[0]||"indie"} space.` },
+          { icon: "📱", label: "TikTok Strategy", msg: `Build a TikTok content strategy for ${artist.name}'s release "${latest.name}". Give me 10 hook ideas for the first 3 seconds and 5 TikTok trends to jump on.` },
+          { icon: "🤝", label: "Influencer Outreach", msg: `Build an influencer outreach strategy for ${artist.name}'s release "${latest.name}". Find 20 TikTok/Instagram creators in the ${(artist.genres||[])[0]||"indie"} space who would naturally vibe with this track.` },
+          { icon: "📧", label: "Pitch Journalists", msg: `Find 10 music journalists who cover ${(artist.genres||[])[0]||"indie"} music and write personalized pitch emails for ${artist.name}'s release "${latest.name}".` },
+        ];
+        return (
+          <div className="bg-[#111] border border-[#6366f1]/30 rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-[#1e1e1e]">
+              <div className="flex items-center gap-3 mb-3">
+                {latest.albumArt
+                  ? <img src={latest.albumArt} alt={latest.name} className="w-12 h-12 rounded-lg object-cover" />
+                  : <div className="w-12 h-12 rounded-lg bg-[#1a1a1a] flex items-center justify-center text-xl">💿</div>}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a href={latest.spotifyUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-white hover:text-[#a5b4fc] transition-colors">{latest.name}</a>
+                    <span className="text-[10px] font-bold text-[#a5b4fc] bg-[#6366f1]/15 px-2 py-0.5 rounded-full">Latest Release</span>
+                  </div>
+                  <p className="text-xs text-zinc-500 capitalize">{latest.type} · {latest.releaseDate} · {latest.totalTracks} track{latest.totalTracks !== 1 ? "s" : ""}</p>
+                </div>
+              </div>
+              <p className="text-xs text-zinc-400 mb-3">Quick actions for this release:</p>
+              <div className="flex flex-wrap gap-2">
+                {releaseTasks.map(task => (
+                  <button
+                    key={task.label}
+                    onClick={() => isPaid ? onSendChat(task.msg) : onSubscribe()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-[#2e2e2e] text-zinc-300 hover:border-[#6366f1]/40 hover:text-white transition-all"
+                  >
+                    <span>{task.icon}</span> {task.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* All releases table */}
       <div className="bg-[#111] border border-[#1e1e1e] rounded-xl overflow-hidden">
         <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-4 px-4 py-2 border-b border-[#1e1e1e] text-[10px] text-zinc-500 uppercase tracking-wider">
           <span></span><span>Title</span><span>Type</span><span>Released</span><span>Tracks</span>
