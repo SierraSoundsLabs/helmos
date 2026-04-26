@@ -1392,6 +1392,7 @@ function LinksTab({
   const [songFormRelease, setSongFormRelease] = useState<{name:string;albumArt?:string;spotifyUrl?:string;releaseDate?:string;type?:string} | null>(null);
   const [songFormExtra, setSongFormExtra] = useState({ appleMusicUrl: "", youtubeUrl: "", presaveUrl: "", bio: "" });
   const [songFormSaving, setSongFormSaving] = useState(false);
+  const [songFormLooking, setSongFormLooking] = useState(false);
   const [copiedSongLink, setCopiedSongLink] = useState<string | null>(null);
 
   const slug = artistSlugFromName(artist.name);
@@ -1663,7 +1664,26 @@ function LinksTab({
               {(artist.allReleases || []).slice(0, 10).map((r, i) => (
                 <button
                   key={r.id || i}
-                  onClick={() => setSongFormRelease({ name: r.name, albumArt: r.albumArt, spotifyUrl: r.spotifyUrl, releaseDate: r.releaseDate, type: r.type })}
+                  onClick={async () => {
+                    setSongFormRelease({ name: r.name, albumArt: r.albumArt, spotifyUrl: r.spotifyUrl, releaseDate: r.releaseDate, type: r.type });
+                    setSongFormExtra({ appleMusicUrl: "", youtubeUrl: "", presaveUrl: "", bio: "" });
+                    setSongFormLooking(true);
+                    try {
+                      const params = new URLSearchParams({
+                        artistName: artist.name,
+                        songName: r.name,
+                        ...(r.spotifyUrl ? { spotifyUrl: r.spotifyUrl } : {}),
+                      });
+                      const res = await fetch(`/api/helm/song-link/lookup?${params}`);
+                      const data = await res.json();
+                      setSongFormExtra(prev => ({
+                        ...prev,
+                        appleMusicUrl: data.appleMusicUrl || "",
+                        youtubeUrl: data.youtubeSearchUrl || "",
+                      }));
+                    } catch { /* non-fatal */ }
+                    finally { setSongFormLooking(false); }
+                  }}
                   className={`flex items-center gap-3 p-2.5 rounded-lg border text-left transition-colors ${
                     songFormRelease?.name === r.name
                       ? "border-[#6366f1]/50 bg-[#6366f1]/10"
@@ -1683,7 +1703,11 @@ function LinksTab({
 
             {songFormRelease && (
               <div className="flex flex-col gap-2 mt-1">
-                <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Streaming links (optional)</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Streaming links</p>
+                  {songFormLooking && <span className="text-[10px] text-[#6366f1] animate-pulse">Looking up links…</span>}
+                  {!songFormLooking && songFormExtra.appleMusicUrl && <span className="text-[10px] text-emerald-400">✓ Auto-filled</span>}
+                </div>
                 {[
                   { key: "appleMusicUrl" as const, placeholder: "Apple Music URL", icon: "🍎" },
                   { key: "youtubeUrl" as const, placeholder: "YouTube URL", icon: "▶️" },
