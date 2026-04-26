@@ -1638,6 +1638,7 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
   const [replyModal, setReplyModal] = useState<InboundEmail | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [replySending, setReplySending] = useState(false);
+  const [sentEmailModal, setSentEmailModal] = useState<OutreachRecord | null>(null);
 
   // Load history + inbox on mount
   useEffect(() => {
@@ -1893,6 +1894,43 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
         </div>
       )}
 
+      {/* Sent email modal */}
+      {sentEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setSentEmailModal(null)}>
+          <div className="w-full max-w-2xl max-h-[80vh] bg-[#0e0e0e] border border-[#2e2e2e] rounded-2xl flex flex-col overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e1e1e] shrink-0">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white truncate">{sentEmailModal.subject}</p>
+                <p className="text-[11px] text-zinc-500 mt-0.5">
+                  To: <span className="text-zinc-300">{sentEmailModal.toName}</span> &lt;{sentEmailModal.to}&gt; · {new Date(sentEmailModal.sentAt).toLocaleString()}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-4">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${sentEmailModal.status === "sent" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                  {sentEmailModal.status}
+                </span>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(sentEmailModal.body).catch(() => {}); }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e] transition-colors"
+                >
+                  Copy
+                </button>
+                <button onClick={() => setSentEmailModal(null)} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors">✕</button>
+              </div>
+            </div>
+            <div className="overflow-y-auto p-5 flex-1">
+              {sentEmailModal.rationale && (
+                <div className="mb-4 px-3 py-2 bg-[#6366f1]/10 border border-[#6366f1]/20 rounded-lg">
+                  <p className="text-[10px] text-[#a5b4fc] font-medium uppercase tracking-wider mb-0.5">Why this contact</p>
+                  <p className="text-xs text-zinc-300">{sentEmailModal.rationale}</p>
+                </div>
+              )}
+              <pre className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">{sentEmailModal.body}</pre>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sent history */}
       <div className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-white">Sent History</h2>
@@ -1909,7 +1947,11 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
             </div>
             <div className="divide-y divide-[#1a1a1a]">
               {history.map(record => (
-                <div key={record.id} className="grid grid-cols-[1fr_1fr_2fr_auto] gap-4 items-center px-4 py-3 hover:bg-[#141414] transition-colors">
+                <div
+                  key={record.id}
+                  className="grid grid-cols-[1fr_1fr_2fr_auto] gap-4 items-center px-4 py-3 hover:bg-[#141414] transition-colors cursor-pointer"
+                  onClick={() => setSentEmailModal(record)}
+                >
                   <span className="text-[11px] text-zinc-500">{new Date(record.sentAt).toLocaleDateString()}</span>
                   <div className="min-w-0">
                     <p className="text-xs text-zinc-300 truncate">{record.toName}</p>
