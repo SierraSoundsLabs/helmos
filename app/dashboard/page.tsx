@@ -1884,33 +1884,58 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
       </div>
 
       {/* Inbox / replies */}
-      {inbox.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-white">Replies <span className="text-zinc-500 font-normal">({inbox.length})</span></h2>
+      {/* Inbox — always visible */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-white">
+            Inbox
+            {inbox.length > 0 && <span className="ml-1.5 text-zinc-500 font-normal">({inbox.length})</span>}
+          </h2>
+          {inbox.length > 0 && (
+            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+              {inbox.filter(m => !m.inReplyTo).length > 0 ? `${inbox.length} replies` : `${inbox.length} messages`}
+            </span>
+          )}
+        </div>
+
+        {inbox.length === 0 ? (
+          <div className="bg-[#0d0d0d] border border-dashed border-[#2e2e2e] rounded-xl p-6 flex flex-col items-center gap-3 text-center">
+            <span className="text-2xl">📬</span>
+            <div>
+              <p className="text-sm font-semibold text-white mb-1">No replies yet</p>
+              <p className="text-xs text-zinc-500 leading-relaxed max-w-xs">
+                When contacts reply to your outreach emails, their messages will appear here. Replies go to <span className="text-zinc-300 font-mono">{toSlug(artist.name)}@helmos.co</span>.
+              </p>
+            </div>
+          </div>
+        ) : (
           <div className="flex flex-col gap-3">
             {inbox.map(msg => (
               <div key={msg.id} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4 hover:border-[#2e2e2e] transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
+                      <div className="w-7 h-7 rounded-full bg-[#6366f1]/20 flex items-center justify-center shrink-0">
+                        <span className="text-xs font-bold text-[#818cf8]">{(msg.fromName || msg.from)[0]?.toUpperCase()}</span>
+                      </div>
                       <span className="text-sm font-semibold text-white">{msg.fromName || msg.from}</span>
                       <span className="text-[10px] text-zinc-600">{new Date(msg.receivedAt).toLocaleDateString()}</span>
                     </div>
-                    <p className="text-xs text-zinc-300 font-medium mb-1">{msg.subject}</p>
-                    <p className="text-xs text-zinc-500 line-clamp-2">{msg.text}</p>
+                    <p className="text-xs text-zinc-300 font-medium mb-1.5 ml-9">{msg.subject}</p>
+                    <p className="text-xs text-zinc-500 line-clamp-3 ml-9 leading-relaxed">{msg.text}</p>
                   </div>
                   <button
                     onClick={() => { setReplyModal(msg); setReplyBody(""); }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#1e1e1e] hover:bg-[#2e2e2e] transition-colors shrink-0"
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors shrink-0"
                   >
-                    Reply
+                    Reply →
                   </button>
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
