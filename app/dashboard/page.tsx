@@ -2740,9 +2740,14 @@ function DashboardContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ artistData, toEmail, context }),
         }).then(r => r.json()).then(data => {
-          const statusMsg = data.status === "sent"
-            ? `✅ Email sent to ${toEmail}\n**Subject:** ${data.subject}\n\nCheck the Outreach tab to see it in your sent history.`
-            : `❌ Failed to send email to ${toEmail}. Please try again or use the Outreach tab.`;
+          let statusMsg;
+          if (data.status === "sent") {
+            statusMsg = `✅ Email sent to ${toEmail}\n**Subject:** ${data.subject}\n\nCheck the Outreach tab to see it in your sent history.`;
+          } else if (data.reason) {
+            statusMsg = `⚠️ **Couldn't send to ${toEmail}**\n\n${data.reason}`;
+          } else {
+            statusMsg = `❌ Failed to send email to ${toEmail}. Please try again or use the Outreach tab.`;
+          }
           setChatMessages(prev => [...prev, { role: "assistant", content: statusMsg }]);
         }).catch(() => {
           setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Something went wrong sending the email. Please try the Outreach tab.` }]);
@@ -2774,12 +2779,18 @@ function DashboardContent() {
           body: JSON.stringify({ artistData, city, context }),
         }).then(r => r.json()).then(data => {
           if (data.ok) {
-            const msg = `✅ **${city} booking outreach complete**\n\n` +
-              `Contacted ${data.sent} ${data.sent === 1 ? "target" : "targets"}${data.failed > 0 ? ` (${data.failed} failed)` : ""}:\n\n` +
-              (data.targets || []).slice(0, data.sent).map((t: {name: string; type: string; rationale: string}) =>
+            const unverified = data.unverified || [];
+            let msg = `✅ **${city} booking outreach complete**\n\n` +
+              `Sent to ${data.sent} verified ${data.sent === 1 ? "contact" : "contacts"}${data.failed > 0 ? ` (${data.failed} failed)` : ""}:\n\n` +
+              (data.targets || []).map((t: {name: string; type: string; rationale: string}) =>
                 `• **${t.name}** (${t.type}) — ${t.rationale}`
-              ).join("\n") +
-              `\n\nAll pitches sent from ${data.fromEmail}. Check the **Outreach tab** to track replies.`;
+              ).join("\n");
+            if (unverified.length > 0) {
+              msg += `\n\n⚠️ **${unverified.length} contact${unverified.length !== 1 ? "s" : ""} skipped** (email couldn\'t be verified):\n` +
+                unverified.map((t: {name: string; email: string}) => `• ${t.name} — ${t.email}`).join("\n") +
+                `\n\nFor these, try reaching out via their Instagram DMs or website contact form.`;
+            }
+            msg += `\n\nCheck the **Outreach tab** to track replies.`;
             setChatMessages(prev => [...prev, { role: "assistant", content: msg }]);
             // Refresh task list to show completed state
             fetch(`/api/tasks?artist=${artistData.id}`)

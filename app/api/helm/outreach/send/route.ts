@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getSession } from "@/lib/session";
 import { sendEmail, artistEmail, toSlug } from "@/lib/email";
 import { kvGet, kvSet } from "@/lib/kv";
+import { verifyEmail } from "@/lib/hunter";
 import type { OutreachDraft } from "@/app/api/helm/outreach/generate/route";
 
 export interface OutreachRecord extends OutreachDraft {
@@ -60,7 +61,28 @@ export async function POST(req: NextRequest) {
   const newIds: string[] = [];
 
   for (const draft of toSend) {
+    // Verify email before sending
+    const verification = await verifyEmail(draft.to);
+    const isVerified = verification === null || verification.valid; // null = Hunter unavailable, allow through
+
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    if (!isVerified) {
+      // Log as failed with reason, skip actual send
+      const record: OutreachRecord = {
+        ...draft,
+        id,
+        artistId,
+        sentAt: new Date().toISOString(),
+        from: fromEmail,
+        status: "failed",
+      };
+      await kvSet(`outreach:${artistId}:${id}`, record);
+      newIds.push(id);
+      failed++;
+      continue;
+    }
+
     const result = await sendEmail({
       from: fromDisplay,
       to: draft.to,

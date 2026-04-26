@@ -8,6 +8,7 @@ import type { SavedBio } from "@/app/api/helm/bio/route";
 import type { LiveShowProfile } from "@/app/api/helm/live-show-profile/route";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import { getBITPastEvents, getBITUpcomingEvents, formatShowHistory } from "@/lib/bandsintown";
+import { verifyEmail, findEmail, extractDomain } from "@/lib/hunter";
 import { TASK_DEFS } from "@/lib/tasks";
 import type { Task } from "@/lib/tasks";
 
@@ -175,14 +176,52 @@ Use real venues, real bands, and realistic emails. Return ONLY the JSON array.`;
     return NextResponse.json({ error: "Failed to research booking targets" }, { status: 500 });
   }
 
-  // Step 2: Send each pitch email
+  // Step 2: Verify emails via Hunter.io before sending
+  const verifiedTargets: typeof targets = [];
+  const unverifiedTargets: typeof targets = [];
+
+  for (const target of targets.slice(0, remaining)) {
+    // Skip obviously fake/generic emails
+    const emailLower = target.email.toLowerCase();
+    const isSuspect = emailLower.includes("example.com") || emailLower.includes("test.") || emailLower.includes("placeholder");
+    if (isSuspect) { unverifiedTargets.push(target); continue; }
+
+    // Try Hunter verification
+    const verification = await verifyEmail(target.email);
+    if (verification?.valid) {
+      verifiedTargets.push(target);
+    } else if (verification === null) {
+      // Hunter not available or quota — try domain search as fallback
+      const domain = extractDomain(target.email);
+      if (domain) {
+        const domainEmails = await findEmail(
+          target.contactName?.split(" ")[0] || "",
+          target.contactName?.split(" ").slice(1).join(" ") || "",
+          domain
+        );
+        if (domainEmails?.verified) {
+          verifiedTargets.push({ ...target, email: domainEmails.email });
+        } else {
+          // No Hunter result — include anyway but flag
+          verifiedTargets.push(target);
+        }
+      } else {
+        unverifiedTargets.push(target);
+      }
+    } else {
+      // Hunter says invalid — skip
+      unverifiedTargets.push(target);
+    }
+  }
+
+  // Step 3: Send to verified targets only
   let sent = 0;
   let failed = 0;
   const idsKey = `outreach-ids:${artistData.id}`;
   const existingIds = (await kvGet<string[]>(idsKey)) ?? [];
   const newIds: string[] = [];
 
-  for (const target of targets.slice(0, remaining)) {
+  for (const target of verifiedTargets) {
     const result = await sendEmail({
       from: fromDisplay,
       to: target.email,
@@ -229,9 +268,10 @@ Use real venues, real bands, and realistic emails. Return ONLY the JSON array.`;
   return NextResponse.json({
     ok: true,
     city,
-    targets,
+    targets: verifiedTargets,
+    unverified: unverifiedTargets,
     sent,
     failed,
     fromEmail,
-  } as BookingOutreachResult & { ok: boolean; fromEmail: string });
+  } as BookingOutreachResult & { ok: boolean; fromEmail: string; unverified: BookingTarget[] });
 }
