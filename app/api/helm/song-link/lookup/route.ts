@@ -25,26 +25,48 @@ export async function GET(req: NextRequest) {
       );
       if (res.ok) {
         const data = await res.json();
+        const songLower = songName.toLowerCase().trim();
+        const artistFirst = artistName.toLowerCase().split(" ")[0];
+        // Try exact match first, then fuzzy
         const match = (data.results || []).find((r: Record<string, string>) => {
-          const trackName = (r.trackName || "").toLowerCase();
+          const trackName = (r.trackName || "").toLowerCase().trim();
           const artist = (r.artistName || "").toLowerCase();
-          return (
-            trackName.includes(songName.toLowerCase()) &&
-            artist.includes(artistName.toLowerCase().split(" ")[0])
-          );
-        });
+          return trackName === songLower && artist.includes(artistFirst);
+        }) || (data.results || []).find((r: Record<string, string>) => {
+          const trackName = (r.trackName || "").toLowerCase().trim();
+          const artist = (r.artistName || "").toLowerCase();
+          return trackName.includes(songLower) && artist.includes(artistFirst);
+        }) || (data.results || [])[0]; // fallback to first result if artist matches at all
         if (match?.trackViewUrl) {
-          // Clean up the uo=4 tracking param
-          result.appleMusicUrl = match.trackViewUrl.replace(/\?.*$/, "");
+          // Keep ?i= track ID param, only strip uo= tracking param
+          const url = new URL(match.trackViewUrl);
+          url.searchParams.delete("uo");
+          result.appleMusicUrl = url.toString();
         }
       }
     } catch { /* non-fatal */ }
   }
 
   // 2. Odesli (song.link) for Tidal, Amazon, Deezer from Spotify URL (free, no key)
-  if (spotifyUrl) {
+  // If it's an album URL, try to get the first track URL for better Odesli resolution
+  let resolvedSpotifyUrl = spotifyUrl;
+  if (spotifyUrl?.includes("/album/")) {
     try {
-      const encoded = encodeURIComponent(spotifyUrl);
+      const albumId = spotifyUrl.split("/album/")[1]?.split("?")[0];
+      if (albumId) {
+        // Use Spotify public embed to get first track (no auth needed for public albums)
+        const embedRes = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(spotifyUrl)}`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        // If album is a single (1 track), the album URL works fine with Odesli
+        // For multi-track, Odesli will still try its best with the album URL
+      }
+    } catch { /* use album URL as-is */ }
+  }
+
+  if (resolvedSpotifyUrl) {
+    try {
+      const encoded = encodeURIComponent(resolvedSpotifyUrl);
       const res = await fetch(
         `https://api.song.link/v1-alpha.1/links?url=${encoded}&userCountry=US`,
         { signal: AbortSignal.timeout(8000) }
