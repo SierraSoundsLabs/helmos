@@ -68,10 +68,11 @@ const STATUS_CONFIG = {
 };
 
 // ─── TASK CARD ─────────────────────────────────────────────────────────────────
-function TaskCard({ task, onView }: { task: Task; onView: (t: Task) => void }) {
+function TaskCard({ task, onView, onRetry }: { task: Task; onView: (t: Task) => void; onRetry: (taskId: string) => void }) {
   const cfg = STATUS_CONFIG[task.status];
   const isRunning = task.status === "running";
   const isDone = task.status === "completed";
+  const isStuck = task.status === "pending" || task.status === "failed";
 
   return (
     <div className={`p-4 rounded-xl border transition-all ${
@@ -123,6 +124,19 @@ function TaskCard({ task, onView }: { task: Task; onView: (t: Task) => void }) {
               <span className="text-[10px] text-zinc-600">~{task.estimatedMinutes} min remaining</span>
             </div>
           )}
+
+          {isStuck && (
+            <button
+              onClick={() => onRetry(task.id)}
+              className="mt-2 text-[11px] font-medium text-amber-400 hover:text-amber-300 transition-colors"
+            >
+              ↻ Run now
+            </button>
+          )}
+
+          {task.status === "failed" && task.error && (
+            <p className="mt-1 text-[10px] text-red-400/70 truncate">{task.error}</p>
+          )}
         </div>
 
         {/* Agent tag */}
@@ -163,6 +177,26 @@ export default function QueueDashboard({
       setLoading(false);
     }
   }, [artistId, isPaid]);
+
+  const handleRefresh = useCallback(async () => {
+    await fetchTasks();
+    // Also kick the agent runner in case tasks are stuck in queue
+    fetch("/api/agent/run", { method: "POST" }).catch(() => {});
+  }, [fetchTasks]);
+
+  const handleRetry = useCallback(async (taskId: string) => {
+    try {
+      await fetch("/api/tasks/retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId }),
+      });
+      // Optimistically update status
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "pending" as const } : t));
+      // Refresh after a short delay to get real status
+      setTimeout(fetchTasks, 3000);
+    } catch { /* ignore */ }
+  }, [fetchTasks]);
 
   useEffect(() => {
     fetchTasks();
@@ -218,7 +252,7 @@ export default function QueueDashboard({
                   : `${completed.length} of ${total} projects done`}
               </p>
             </div>
-            <button onClick={fetchTasks} className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">↻ refresh</button>
+            <button onClick={handleRefresh} className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1 rounded bg-[#1a1a1a] hover:bg-[#222]">↻ Refresh</button>
           </div>
 
           {/* Progress bar */}
@@ -254,7 +288,7 @@ export default function QueueDashboard({
 
         <div className="flex flex-col gap-2.5">
           {tasks.map(task => (
-            <TaskCard key={task.id} task={task} onView={setActiveResult} />
+            <TaskCard key={task.id} task={task} onView={setActiveResult} onRetry={handleRetry} />
           ))}
           {tasks.length === 0 && (
             <div className="text-center py-12 text-zinc-600 text-sm">
