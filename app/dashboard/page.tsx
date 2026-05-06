@@ -2577,6 +2577,7 @@ function DashboardContent() {
 
   // Auth / paid state
   const [isPaid, setIsPaid] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [showSubscribeModal, setShowSubscribeModal] = useState(false);
   const [claimedArtist, setClaimedArtist] = useState(false);
@@ -2608,7 +2609,7 @@ function DashboardContent() {
   useEffect(() => {
     fetch("/api/auth/session")
       .then(r => r.json())
-      .then(d => { if (d.authenticated) setIsPaid(true); })
+      .then(d => { if (d.authenticated) { setIsPaid(true); setHasSession(true); } })
       .catch(() => {});
   }, []);
 
@@ -3103,8 +3104,8 @@ function DashboardContent() {
           <h2 className="text-xl font-semibold text-white">Something went wrong</h2>
           <p className="text-zinc-400 text-sm">{errorMsg}</p>
         </div>
-        <button onClick={() => router.push("/")} className="px-6 py-3 rounded-xl text-sm font-medium text-white bg-[#6366f1]">
-          Try another artist
+        <button onClick={() => router.push(hasSession ? `/dashboard?artist=${artistId}` : "/")} className="px-6 py-3 rounded-xl text-sm font-medium text-white bg-[#6366f1]">
+          {hasSession ? "Retry" : "Try another artist"}
         </button>
       </div>
     );
@@ -3177,7 +3178,7 @@ function DashboardContent() {
       {/* Nav */}
       <nav className="border-b border-[#1a1a1a] px-6 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <button onClick={() => router.push("/")} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <button onClick={() => { if (artistData) { setActiveTab("overview"); window.scrollTo({ top: 0, behavior: "smooth" }); } }} className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer">
             <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center">
               <span className="text-xs font-bold text-white">H</span>
             </div>
@@ -3204,9 +3205,8 @@ function DashboardContent() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-emerald-400 font-medium">⚡ Active</span>
               </div>
-            ) : (
+            ) : hasSession ? null : (
               <>
-
                 <a
                   href="/login"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 border border-[#1e1e1e] hover:border-[#2e2e2e] transition-colors"
