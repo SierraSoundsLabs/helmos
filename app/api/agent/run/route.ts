@@ -87,8 +87,8 @@ async function runAgent(task: Task): Promise<string> {
   const userPrompt = buildPrompt(type, { artistName, genre, listeners, latestRelease, upcomingRelease, releaseTitle, releaseDate, sharedKnowledge, goals: input.goals as string[] ?? [] });
 
   const message = await anthropic.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 4096,
+    model: "claude-haiku-4-5",
+    max_tokens: 2048,
     messages: [{ role: "user", content: userPrompt }],
     system: systemPrompt,
   });

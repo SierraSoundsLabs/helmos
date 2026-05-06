@@ -33,8 +33,8 @@ async function runTaskInline(task: Task): Promise<string> {
   const prompt = prompts[type] ?? `${base}\n\nComplete the task for ${artistName} in ${genre}.`;
 
   const message = await anthropic.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 4096,
+    model: "claude-haiku-4-5",
+    max_tokens: 2048,
     system: "You are Helm, an AI record label that produces real, immediately usable deliverables — not advice, but the actual thing. Be specific, name real people and publications, write real copy. Format in clean markdown.",
     messages: [{ role: "user", content: prompt }],
   });
@@ -51,6 +51,16 @@ export async function POST(req: NextRequest) {
 
   const task = await getTask(taskId);
   if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+
+  // If task is stuck in "running" (timed out previously), reset it
+  if (task.status === "running" && task.startedAt) {
+    const stuckMs = Date.now() - new Date(task.startedAt).getTime();
+    if (stuckMs > 5 * 60 * 1000) {
+      // More than 5 min — it timed out; allow retry
+    } else {
+      return NextResponse.json({ ok: false, error: "Task is already running" }, { status: 409 });
+    }
+  }
 
   // Mark as running immediately
   const running: Task = { ...task, status: "running", startedAt: new Date().toISOString(), completedAt: null, error: null };
