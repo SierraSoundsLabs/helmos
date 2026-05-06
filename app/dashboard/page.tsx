@@ -1048,12 +1048,10 @@ function OverviewTab({
           <h2 className="text-sm font-semibold text-white mb-3">Quick Actions</h2>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { label: "📣 Run Fan Ads",         desc: "Launch fan acquisition campaign",    msg: "Help me set up a fan acquisition ad campaign on Meta/Instagram. What targeting, budget, and creative do you recommend for my current stage?" },
-              { label: "📄 Create One-Sheet",     desc: "Artist media kit from Spotify data", doc: "one-sheet" as DocType },
-              { label: "🔗 Pre-Save Link",        desc: "For upcoming release",               msg: "I have an upcoming release and need a pre-save strategy. Walk me through what to set up and how to promote it." },
-              { label: "🛍️ Launch Merch Store",   desc: "Custom designs + fulfillment",       msg: "Help me launch a merch store. What products should I start with, which platform is best, and how do I promote it?" },
-              { label: "🎸 Find Tour & Show Openings",  desc: "Get on local bills & tour supports",  msg: "I want to find opportunities to open for touring acts and get on local show bills. Who do I contact, how do I pitch myself, and what shows in my genre should I be targeting?" },
-              { label: "🔍 Royalty Audit",        desc: "Compare recordings vs PRO registrations", royaltyAudit: true },
+              { label: "📄 Create One-Sheet",           desc: "Artist media kit from Spotify data",            doc: "one-sheet" as DocType },
+              { label: "🔍 Royalty Audit",              desc: "Compare recordings vs PRO registrations",        royaltyAudit: true },
+              { label: "🎸 Find Tour Openings",         desc: "Get on local bills & tour supports",             msg: "I want to find opportunities to open for touring acts and get on local show bills. Who do I contact, how do I pitch myself, and what shows in my genre should I be targeting?" },
+              { label: "🔗 Pre-Save Strategy",          desc: "Plan your next release pre-save campaign",       msg: "I have an upcoming release and need a pre-save strategy. Walk me through what to set up and how to promote it." },
             ].map((action) => (
               <button
                 key={action.label}
@@ -1257,7 +1255,7 @@ function WorksTab({
           { icon: "📰", label: "Press Release", msg: `Write a press release for ${artist.name}'s release "${latest.name}" (${latest.type}, ${latest.releaseDate}). Make it press-ready for music blogs and journalists.` },
           { icon: "🎵", label: "Playlist Pitch", msg: `Write a playlist curator pitch email for "${latest.name}" by ${artist.name}. Target curators in the ${(artist.genres||[])[0]||"indie"} space.` },
           { icon: "📱", label: "TikTok Strategy", msg: `Build a TikTok content strategy for ${artist.name}'s release "${latest.name}". Give me 10 hook ideas for the first 3 seconds and 5 TikTok trends to jump on.` },
-          { icon: "🤝", label: "Influencer Outreach", msg: `Build an influencer outreach strategy for ${artist.name}'s release "${latest.name}". Find 20 TikTok/Instagram creators in the ${(artist.genres||[])[0]||"indie"} space who would naturally vibe with this track.` },
+          { icon: "🎯", label: "Pitch Playlist Curators", msg: `Find 20 playlist curators in the ${(artist.genres||[])[0]||"indie"} space who would be a good fit for ${artist.name}'s release "${latest.name}". Include playlist names, follower counts, and how to submit.` },
           { icon: "📧", label: "Pitch Journalists", msg: `Find 10 music journalists who cover ${(artist.genres||[])[0]||"indie"} music and write personalized pitch emails for ${artist.name}'s release "${latest.name}".` },
         ];
         return (
@@ -1337,8 +1335,7 @@ function ReleaseMarketingTab({
     { icon: "📣", title: "Press & Playlist Outreach",desc: "Pitch 10 journalists and 50 playlist curators in your genre 4 weeks out",                                                      msg: `Build a press and playlist outreach plan for ${artist.name}. I need: 10 journalist targets, 50 playlist curator targets in the ${(artist.genres||[])[0]||"my"} genre, and a pitch template for each.` },
     { icon: "📄", title: "Press Release",            desc: "Draft and distribute a press release to genre-specific music blogs",                                                          msg: `Write a press release for ${artist.name}'s most recent release and tell me how to distribute it to the right music blogs.` },
     { icon: "📱", title: "Social Content Plan",      desc: "30-day content calendar built around your release date and story",                                                            msg: `Build a 30-day social content calendar for ${artist.name} around a release campaign. Include post ideas, formats (Reels/TikTok/Story), and optimal posting times.` },
-    { icon: "📣", title: "Fan Acquisition Ads",      desc: "Run Meta/Instagram ads to grow your audience before release",                                                                msg: `Help me set up Meta/Instagram fan acquisition ads for ${artist.name}. What audience targeting, budget allocation, and ad creative do you recommend?` },
-    { icon: "🤝", title: "Influencer Outreach",       desc: "Find TikTok & Instagram creators who match your sound and build a seeding campaign",                                       msg: `Build me a targeted influencer outreach strategy for ${artist.name}. I need: 20 TikTok and Instagram creators in the ${(artist.genres||[])[0]||"indie"} space who would naturally vibe with my sound, their follower counts, how to contact them, what to offer (free music, revenue share, merch, etc.), and a pitch script I can use to reach out. Focus on micro (10K-100K) and mid-tier (100K-1M) creators for the best ROI.` },
+
     { icon: "🎤", title: "Editorial Playlist Pitch", desc: `Submit to Spotify editorial for ${artist.name}'s next release`,                                                              msg: `Walk me through submitting ${artist.name}'s next release to Spotify editorial playlists. What do I need, when should I submit, and how do I write the pitch?` },
     { icon: "📺", title: "YouTube Premiere",         desc: "Set up a YouTube premiere + community post strategy",                                                                         msg: `Help me set up a YouTube premiere for ${artist.name}'s next release. What do I need to prepare, how do I build anticipation, and what community posts should I make?` },
     { icon: "🎙️", title: "Podcast Pitch",            desc: "Find 10 music podcasts in your genre and pitch a story",                                                                     msg: `Find 10 music podcasts relevant to ${artist.name}'s genre (${(artist.genres||[])[0]||"indie music"}) and write a pitch template I can use to get featured.` },

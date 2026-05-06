@@ -41,32 +41,30 @@ export interface AnalysisResult {
 const client = new Anthropic();
 
 const TASK_MENU_BASE = `
-AVAILABLE TASK TYPES (pick the 5 most relevant for this specific artist):
+AVAILABLE TASK TYPES — only suggest tasks Helm can actually execute (pick the 5 most relevant):
 1. Run royalty audit — compare recordings against ASCAP/BMI, MLC, SoundExchange
 2. Pitch to Spotify editorial playlists (ONLY if upcoming release 4+ weeks out — never pitch without this)
 3. Find open touring slots in their region
 4. Find local shows to open for
 5. Route a regional tour and email venue promoters
 6. Find 10 booking agents to pitch (ONLY suggest if no agent email found in bio/website)
-7. Build email list with landing page (ONLY flag as "big miss" if bio/website shows no email capture)
-8. Run fan acquisition ads on Meta/Instagram
-9. Find 10 music journalists in their genre for press pitches
-10. Draft a press release for latest release
-11. Find artists in same genre for collaboration pitches
-12. Submit to college booking contacts (NACA)
-13. Pitch artist managers (ONLY if no manager indicated in bio)
-14. Pitch independent record labels
-15. Create one-sheet with Spotify/streaming data
-16. Build pre-save link for upcoming release
-17. Find sync licensing opportunities
-18. Create merch designs + set up merch store
-19. Find podcasts in their genre for interviews
-20. Optimize Spotify profile (bio, artist pick, canvas)
-21. Build social content calendar (TikTok + Instagram Reels)
-22. Find similar artists for playlist swaps
-23. Build complete Works & Recordings catalog with splits
-24. Create Google Sheet tour history
-25. Create stage plot and tech rider
+7. Find 10 music journalists in their genre for press pitches
+8. Draft a press release for latest release
+9. Find artists in same genre for collaboration pitches
+10. Submit to college booking contacts (NACA)
+11. Pitch artist managers (ONLY if no manager indicated in bio)
+12. Pitch independent record labels
+13. Create one-sheet with Spotify/streaming data
+14. Build pre-save strategy for upcoming release
+15. Find sync licensing opportunities
+16. Find podcasts in their genre for interview pitches
+17. Optimize Spotify profile (bio, artist pick, canvas)
+18. Build social content calendar (TikTok + Instagram Reels)
+19. Find similar artists for playlist swaps
+20. Build complete Works & Recordings catalog with splits
+21. Find playlist curators in their genre to pitch
+
+DO NOT suggest: merch stores, paid ad campaigns (Meta/Instagram/TikTok ads), influencer campaigns, email list platforms. Helm cannot execute these.
 `;
 
 export async function analyzeArtist(artistData: ArtistData): Promise<AnalysisResult> {
