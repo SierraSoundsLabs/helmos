@@ -94,7 +94,7 @@ export default function AccountPage() {
           router.push("/");
           return;
         }
-        const sessionData = await sessionRes.json() as { email: string; customerId: string };
+        const sessionData = await sessionRes.json() as { email: string; customerId: string; artistId?: string };
         if (!sessionData.email) {
           router.push("/");
           return;
@@ -111,6 +111,10 @@ export default function AccountPage() {
         // Load subscription info
         const sub = sessionData.customerId ? await fetchSubscription(sessionData.customerId) : null;
 
+        // Store artistId for back-nav
+        if (sessionData.artistId) {
+          sessionStorage.setItem("helm_artistId", sessionData.artistId);
+        }
         setAccountData({
           email: sessionData.email,
           profile: profileData,
@@ -243,7 +247,7 @@ export default function AccountPage() {
             <span className="text-sm font-semibold text-white">Helm</span>
           </button>
           <button
-            onClick={() => router.push("/dashboard")}
+            onClick={() => { const aid = sessionStorage.getItem("helm_artistId"); router.push(aid ? `/dashboard?artist=${aid}` : "/"); }}
             className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
           >
             ← Back to dashboard

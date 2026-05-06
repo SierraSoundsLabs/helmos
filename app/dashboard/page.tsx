@@ -72,10 +72,22 @@ function Sparkline({ popularity }: { popularity: number }) {
 }
 
 // ─── DOC MODAL ────────────────────────────────────────────────────────────────
+function stripMd(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^[-–—]{3,}\s*$/gm, "")   // hr lines
+    .replace(/^>\s*/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function DocModal({ content, title, onClose }: { content: string; title: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+  const plain = stripMd(content);
   const copy = () => {
-    navigator.clipboard.writeText(content);
+    navigator.clipboard.writeText(plain);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -92,7 +104,7 @@ function DocModal({ content, title, onClose }: { content: string; title: string;
           </div>
         </div>
         <div className="overflow-y-auto p-5">
-          <pre className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">{content}</pre>
+          <p className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">{plain}</p>
         </div>
       </div>
     </div>
@@ -896,7 +908,7 @@ function HelmChat({
                 ? "bg-[#6366f1]/20 text-white border border-[#6366f1]/30"
                 : "bg-[#0d0d0d] text-zinc-200 border border-[#1e1e1e]"
             }`}>
-              {msg.content}
+              {msg.role === "assistant" ? stripMd(msg.content) : msg.content}
             </div>
           </div>
         ))}
@@ -2153,7 +2165,7 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
                   <p className="text-xs text-zinc-300">{sentEmailModal.rationale}</p>
                 </div>
               )}
-              <pre className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">{sentEmailModal.body}</pre>
+              <p className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">{stripMd(sentEmailModal.body)}</p>
             </div>
           </div>
         </div>
@@ -2430,7 +2442,7 @@ function AIToolsTab({ artist }: { artist: ArtistData }) {
               <p className="text-zinc-300 font-medium">{subject}</p>
             </div>
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
-              <pre className="whitespace-pre-wrap text-zinc-300 font-sans leading-relaxed">{pr}</pre>
+              <p className="whitespace-pre-wrap text-zinc-300 font-sans leading-relaxed text-xs">{stripMd(pr)}</p>
             </div>
           </div>
         );
@@ -2557,7 +2569,7 @@ function AIToolsTab({ artist }: { artist: ArtistData }) {
               </div>
             )}
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3">
-              <pre className="whitespace-pre-wrap text-zinc-300 font-sans leading-relaxed">{report}</pre>
+              <p className="whitespace-pre-wrap text-zinc-300 font-sans leading-relaxed text-xs">{stripMd(report)}</p>
             </div>
             {emailSent && (
               <p className="text-[10px] text-emerald-400">Report sent to your email.</p>
@@ -3216,7 +3228,7 @@ function DashboardContent() {
           </button>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push("/account")}
+              onClick={() => { if (artistId) sessionStorage.setItem("helm_artistId", artistId); router.push("/account"); }}
               title="Account Settings"
               className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors"
             >
