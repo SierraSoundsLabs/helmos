@@ -23,12 +23,10 @@ function HomeContent() {
   const [loginState, setLoginState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [loginError, setLoginError] = useState("");
 
-  // Password login/register state
+  // Password login state
   const [loginTab, setLoginTab] = useState<"magic" | "password">("magic");
-  const [pwMode, setPwMode] = useState<"login" | "register">("login");
   const [pwEmail, setPwEmail] = useState("");
   const [pwPassword, setPwPassword] = useState("");
-  const [pwConfirm, setPwConfirm] = useState("");
   const [pwShowPass, setPwShowPass] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState("");
@@ -106,14 +104,13 @@ function HomeContent() {
     const email = pwEmail.trim().toLowerCase();
     if (!email || !email.includes("@")) { setPwError("Please enter a valid email address."); return; }
     if (!pwPassword || pwPassword.length < 8) { setPwError("Password must be at least 8 characters."); return; }
-    if (pwMode === "register" && pwPassword !== pwConfirm) { setPwError("Passwords do not match."); return; }
 
     setPwLoading(true);
     try {
       const res = await fetch("/api/auth/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: pwMode, email, password: pwPassword }),
+        body: JSON.stringify({ action: "login", email, password: pwPassword }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -317,7 +314,7 @@ function HomeContent() {
                     onChange={e => setPwPassword(e.target.value)}
                     placeholder="Password"
                     className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
-                    autoComplete={pwMode === "register" ? "new-password" : "current-password"}
+                    autoComplete="current-password"
                   />
                   <button
                     type="button"
@@ -328,33 +325,13 @@ function HomeContent() {
                     {pwShowPass ? <EyeOffIcon /> : <EyeIcon />}
                   </button>
                 </div>
-                {pwMode === "register" && (
-                  <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
-                    <LockIcon />
-                    <input
-                      type={pwShowPass ? "text" : "password"}
-                      value={pwConfirm}
-                      onChange={e => setPwConfirm(e.target.value)}
-                      placeholder="Confirm password"
-                      className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
-                      autoComplete="new-password"
-                    />
-                  </div>
-                )}
                 {pwError && <p className="text-xs text-red-400 text-center">{pwError}</p>}
                 <button
                   type="submit"
                   disabled={pwLoading}
                   className="w-full py-3 rounded-xl text-sm font-semibold text-white border border-[#2e2e2e] bg-[#111] hover:bg-[#1a1a1a] hover:border-[#6366f1]/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
-                  {pwLoading ? "Signing in…" : pwMode === "register" ? "Create account →" : "Sign In →"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setPwMode(m => m === "login" ? "register" : "login"); setPwError(""); setPwConfirm(""); }}
-                  className="text-xs text-zinc-500 hover:text-[#6366f1] transition-colors text-center"
-                >
-                  {pwMode === "login" ? "First time? Set a password →" : "← Back to sign in"}
+                  {pwLoading ? "Signing in…" : "Sign In →"}
                 </button>
               </form>
             )}

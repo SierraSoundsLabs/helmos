@@ -3,11 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Tab = "signin" | "register";
-
 export default function LoginPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -22,11 +19,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: tab === "signin" ? "login" : "register",
-          email,
-          password,
-        }),
+        body: JSON.stringify({ action: "login", email, password }),
       });
       const data = await res.json();
       if (data.ok && data.redirect) {
@@ -49,34 +42,8 @@ export default function LoginPage() {
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center mx-auto mb-5">
             <span className="text-2xl font-bold text-white">H</span>
           </div>
-          <h1 className="text-2xl font-bold text-white mb-1">Welcome to Helmos</h1>
-          <p className="text-zinc-500 text-sm">Your AI music career manager</p>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex bg-[#111] border border-[#1e1e1e] rounded-xl p-1 mb-6">
-          <button
-            type="button"
-            onClick={() => { setTab("signin"); setErrorMsg(""); setStatus("idle"); }}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-              tab === "signin"
-                ? "bg-[#6366f1] text-white"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setTab("register"); setErrorMsg(""); setStatus("idle"); }}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-              tab === "register"
-                ? "bg-[#6366f1] text-white"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            Create Account
-          </button>
+          <h1 className="text-2xl font-bold text-white mb-1">Welcome back</h1>
+          <p className="text-zinc-500 text-sm">Sign in to your Helm account</p>
         </div>
 
         {/* Form */}
@@ -92,12 +59,12 @@ export default function LoginPage() {
           />
           <input
             type="password"
-            placeholder="Password (min 8 characters)"
+            placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={8}
-            autoComplete={tab === "signin" ? "current-password" : "new-password"}
+            autoComplete="current-password"
             className="w-full px-4 py-3 rounded-xl bg-[#111] border border-[#1e1e1e] text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6366f1] transition-colors"
           />
           <button
@@ -105,13 +72,7 @@ export default function LoginPage() {
             disabled={status === "loading"}
             className="w-full py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            {status === "loading"
-              ? tab === "signin"
-                ? "Signing in…"
-                : "Creating account…"
-              : tab === "signin"
-              ? "Sign In"
-              : "Create Account"}
+            {status === "loading" ? "Signing in…" : "Sign In"}
           </button>
         </form>
 
@@ -143,7 +104,7 @@ export default function LoginPage() {
           Continue with Google
         </a>
 
-        {/* Magic link fallback */}
+        {/* Magic link */}
         <p className="text-center text-zinc-600 text-xs mt-5">
           Prefer magic link?{" "}
           <a href="/" className="text-[#6366f1] hover:underline">
