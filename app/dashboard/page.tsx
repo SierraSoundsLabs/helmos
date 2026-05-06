@@ -1044,31 +1044,40 @@ function OverviewTab({
         </div>
 
         {/* Quick Actions */}
-        <div>
-          <h2 className="text-sm font-semibold text-white mb-3">Quick Actions</h2>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { label: "📄 Create One-Sheet",           desc: "Artist media kit from Spotify data",            doc: "one-sheet" as DocType },
-              { label: "🔍 Royalty Audit",              desc: "Compare recordings vs PRO registrations",        royaltyAudit: true },
-              { label: "🎸 Find Tour Openings",         desc: "Get on local bills & tour supports",             msg: "I want to find opportunities to open for touring acts and get on local show bills. Who do I contact, how do I pitch myself, and what shows in my genre should I be targeting?" },
-              { label: "🔗 Pre-Save Strategy",          desc: "Plan your next release pre-save campaign",       msg: "I have an upcoming release and need a pre-save strategy. Walk me through what to set up and how to promote it." },
-            ].map((action) => (
-              <button
-                key={action.label}
-                onClick={() => {
-                  if (!isPaid) { onSubscribe(); return; }
-                  if ("doc" in action && action.doc) onGenerate(action.doc);
-                  else if ("royaltyAudit" in action && action.royaltyAudit) onRoyaltyAudit();
-                  else if ("msg" in action && action.msg) onSendChat(action.msg);
-                }}
-                className="flex flex-col gap-1 p-3 rounded-xl border bg-[#111] border-[#1e1e1e] hover:border-[#6366f1]/40 hover:bg-[#12121a] transition-all text-left"
-              >
-                <span className="text-xs font-semibold text-white">{action.label}</span>
-                <span className="text-[10px] text-zinc-500 leading-tight">{action.desc}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        {(() => {
+          const [showSEAuditOverview, setShowSEAuditOverview] = React.useState(false);
+          return (
+            <div>
+              {showSEAuditOverview && isPaid && (
+                <SoundExchangeAuditModal artist={artistData} onClose={() => setShowSEAuditOverview(false)} />
+              )}
+              <h2 className="text-sm font-semibold text-white mb-3">Quick Actions</h2>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "📄 Create One-Sheet",           desc: "Artist media kit from Spotify data",            doc: "one-sheet" as DocType },
+                  { label: "🔍 PRO Royalty Audit",          desc: "Compare recordings vs ASCAP/BMI & MLC",         royaltyAudit: true },
+                  { label: "🎵 SoundExchange Audit",        desc: "Verify digital performance royalty registration", seAudit: true },
+                  { label: "🔗 Pre-Save Strategy",          desc: "Plan your next release pre-save campaign",       msg: "I have an upcoming release and need a pre-save strategy. Walk me through what to set up and how to promote it." },
+                ].map((action) => (
+                  <button
+                    key={action.label}
+                    onClick={() => {
+                      if (!isPaid) { onSubscribe(); return; }
+                      if ("doc" in action && action.doc) onGenerate(action.doc);
+                      else if ("royaltyAudit" in action && action.royaltyAudit) onRoyaltyAudit();
+                      else if ("seAudit" in action && action.seAudit) setShowSEAuditOverview(true);
+                      else if ("msg" in action && action.msg) onSendChat(action.msg);
+                    }}
+                    className="flex flex-col gap-1 p-3 rounded-xl border bg-[#111] border-[#1e1e1e] hover:border-[#6366f1]/40 hover:bg-[#12121a] transition-all text-left"
+                  >
+                    <span className="text-xs font-semibold text-white">{action.label}</span>
+                    <span className="text-[10px] text-zinc-500 leading-tight">{action.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Documents */}
         <div>
@@ -1193,6 +1202,322 @@ function OverviewTab({
   );
 }
 
+// ─── SOUNDEXCHANGE AUDIT MODAL ───────────────────────────────────────────────
+interface SERecording {
+  isrc?: string;
+  recordingTitle?: string;
+  recordingArtistName?: string;
+  releaseName?: string;
+  recordingYear?: string;
+  releaseLabel?: string;
+  duration?: string;
+  recordingType?: string;
+}
+interface SECatalogMatch {
+  trackName: string;
+  foundInSoundExchange: boolean;
+  isrc?: string;
+  releaseName?: string;
+  recordingYear?: string;
+  releaseLabel?: string;
+}
+interface SEAuditResult {
+  artistName: string;
+  totalFound: number;
+  recordings: SERecording[];
+  catalogMatches: SECatalogMatch[];
+  missingFromSoundExchange: string[];
+  missingFromCatalog: SERecording[];
+  summary: string;
+}
+
+function SoundExchangeAuditModal({
+  artist,
+  onClose,
+}: {
+  artist: ArtistData;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState<SEAuditResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [activeTab, setActiveTab] = React.useState<"catalog" | "all">("catalog");
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const runAudit = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const catalogTracks = [
+        ...artist.allReleases.slice(0, 15).map((r) => r.name),
+        ...artist.topTracks.slice(0, 10).map((t) => t.name),
+      ].filter((n, i, arr) => arr.indexOf(n) === i).slice(0, 20);
+
+      const res = await fetch("/api/helm/soundexchange", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artistName: artist.name, catalogTracks }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Audit failed");
+      setResult(data as SEAuditResult);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registeredCount = result?.catalogMatches.filter((m) => m.foundInSoundExchange).length ?? 0;
+  const totalCatalog = result?.catalogMatches.length ?? 0;
+  const missingCount = result?.missingFromSoundExchange.length ?? 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[85vh] bg-[#0e0e0e] border border-[#2e2e2e] rounded-2xl flex flex-col overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e1e1e] shrink-0">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">🎵</span>
+            <div>
+              <h3 className="text-sm font-semibold text-white">Digital Performance Royalty Audit</h3>
+              <p className="text-[10px] text-zinc-500">Powered by SoundExchange Repertoire Database</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1">
+          {/* Intro / CTA */}
+          {!result && !loading && (
+            <div className="p-5 flex flex-col gap-4">
+              <div className="bg-[#0d1a12] border border-emerald-500/20 rounded-xl p-4 flex items-start gap-3">
+                <span className="text-xl shrink-0">ℹ️</span>
+                <div className="text-xs text-zinc-300 leading-relaxed">
+                  <p className="font-semibold text-white mb-1">What this checks</p>
+                  <p>SoundExchange collects digital performance royalties (Spotify, Apple Music, Pandora, SiriusXM) for <strong className="text-white">sound recording rights owners</strong>. If your recordings aren&apos;t in their database, you may be missing unclaimed royalties.</p>
+                  <p className="mt-2 text-zinc-500 text-[10px]">Results are for discovery purposes and require manual review per SoundExchange&apos;s terms.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <p className="text-xs font-semibold text-white">Artist to audit</p>
+                <div className="flex items-center gap-3 p-3 bg-[#111] border border-[#1e1e1e] rounded-xl">
+                  {artist.image && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={artist.image} alt={artist.name} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-white">{artist.name}</p>
+                    <p className="text-[10px] text-zinc-500">{artist.allReleases.length} releases · {(artist.monthlyListeners ?? 0).toLocaleString()} monthly listeners</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-semibold text-white">Will check up to 20 catalog tracks against:</p>
+                {["SoundExchange Repertoire Database", "ISRC registration status", "Label & release metadata accuracy"].map((item) => (
+                  <div key={item} className="flex items-center gap-2 text-xs text-zinc-400">
+                    <span className="text-emerald-400">✓</span> {item}
+                  </div>
+                ))}
+              </div>
+
+              {error && (
+                <div className="bg-red-950/30 border border-red-500/30 rounded-lg px-4 py-3 text-xs text-red-400">
+                  {error}
+                </div>
+              )}
+
+              <button
+                onClick={runAudit}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+              >
+                Run Audit →
+              </button>
+            </div>
+          )}
+
+          {/* Loading */}
+          {loading && (
+            <div className="flex flex-col items-center justify-center gap-4 py-12">
+              <div className="w-10 h-10 border-2 border-[#6366f1]/30 border-t-[#6366f1] rounded-full animate-spin" />
+              <p className="text-sm text-zinc-300 font-medium">Searching SoundExchange database…</p>
+              <p className="text-xs text-zinc-600">Checking up to 20 catalog tracks</p>
+            </div>
+          )}
+
+          {/* Results */}
+          {result && !loading && (
+            <div className="p-5 flex flex-col gap-5">
+              {/* Summary banner */}
+              <div className={`rounded-xl p-4 border flex items-start gap-3 ${
+                missingCount === 0
+                  ? "bg-emerald-950/30 border-emerald-500/30"
+                  : "bg-amber-950/30 border-amber-500/30"
+              }`}>
+                <span className="text-xl shrink-0">{missingCount === 0 ? "✅" : "⚠️"}</span>
+                <div>
+                  <p className={`text-sm font-semibold mb-1 ${missingCount === 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                    {result.totalFound === 0
+                      ? `No recordings found for "${result.artistName}"`
+                      : `${registeredCount} of ${totalCatalog} tracks registered · ${result.totalFound} total in SoundExchange`}
+                  </p>
+                  <p className="text-xs text-zinc-400 leading-relaxed">{result.summary}</p>
+                </div>
+              </div>
+
+              {/* Stats row */}
+              {totalCatalog > 0 && (
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Registered", value: registeredCount, color: "text-emerald-400" },
+                    { label: "Not Found", value: missingCount, color: missingCount > 0 ? "text-amber-400" : "text-zinc-400" },
+                    { label: "In SE Total", value: result.totalFound, color: "text-zinc-300" },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-3 text-center">
+                      <p className={`text-xl font-bold ${color}`}>{value}</p>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">{label}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Missing tracks — priority action */}
+              {missingCount > 0 && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-amber-400">⚠️ Not found in SoundExchange — may be missing royalties</p>
+                  <div className="flex flex-col gap-1.5">
+                    {result.missingFromSoundExchange.map((track) => (
+                      <div key={track} className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1200] border border-amber-500/20 rounded-lg">
+                        <span className="text-sm">🎵</span>
+                        <p className="text-xs font-medium text-white flex-1">{track}</p>
+                        <span className="text-[10px] text-amber-500 font-semibold">UNREGISTERED</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg px-4 py-3 text-xs text-zinc-400 leading-relaxed">
+                    <strong className="text-white">Next step:</strong> Contact Good Morning Music Publishing Admin to register these tracks with SoundExchange. Missing ISRCs = missed digital performance royalties from every streaming platform.
+                  </div>
+                </div>
+              )}
+
+              {/* Tabs: Catalog matches vs All SE recordings */}
+              {(result.catalogMatches.length > 0 || result.recordings.length > 0) && (
+                <div>
+                  <div className="flex gap-1 mb-3 bg-[#111] border border-[#1e1e1e] rounded-lg p-1">
+                    <button
+                      onClick={() => setActiveTab("catalog")}
+                      className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        activeTab === "catalog"
+                          ? "bg-[#6366f1] text-white"
+                          : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      Catalog Match ({result.catalogMatches.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("all")}
+                      className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        activeTab === "all"
+                          ? "bg-[#6366f1] text-white"
+                          : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      All SE Recordings ({result.recordings.length})
+                    </button>
+                  </div>
+
+                  {activeTab === "catalog" && (
+                    <div className="flex flex-col gap-1.5">
+                      {result.catalogMatches.map((match) => (
+                        <div
+                          key={match.trackName}
+                          className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${
+                            match.foundInSoundExchange
+                              ? "bg-emerald-950/20 border-emerald-500/20"
+                              : "bg-[#111] border-[#1e1e1e]"
+                          }`}
+                        >
+                          <span className={`text-sm shrink-0 mt-0.5 ${match.foundInSoundExchange ? "text-emerald-400" : "text-zinc-600"}`}>
+                            {match.foundInSoundExchange ? "✓" : "–"}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-white truncate">{match.trackName}</p>
+                            {match.foundInSoundExchange && (
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                                {match.isrc && <span className="text-[10px] text-zinc-500 font-mono">{match.isrc}</span>}
+                                {match.releaseName && <span className="text-[10px] text-zinc-600">{match.releaseName}</span>}
+                                {match.recordingYear && <span className="text-[10px] text-zinc-600">{match.recordingYear}</span>}
+                              </div>
+                            )}
+                          </div>
+                          <span className={`text-[10px] font-semibold shrink-0 ${
+                            match.foundInSoundExchange ? "text-emerald-400" : "text-zinc-600"
+                          }`}>
+                            {match.foundInSoundExchange ? "REGISTERED" : "NOT FOUND"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {activeTab === "all" && (
+                    <div className="flex flex-col gap-1.5">
+                      {result.recordings.slice(0, 50).map((rec, i) => (
+                        <div key={i} className="flex items-start gap-3 px-3 py-2.5 bg-[#111] border border-[#1e1e1e] rounded-lg">
+                          <span className="text-sm text-zinc-600 shrink-0 mt-0.5 font-mono w-5 text-right">{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-white truncate">{rec.recordingTitle}</p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                              {rec.isrc && <span className="text-[10px] text-zinc-500 font-mono">{rec.isrc}</span>}
+                              {rec.releaseName && <span className="text-[10px] text-zinc-600">{rec.releaseName}</span>}
+                              {rec.recordingYear && <span className="text-[10px] text-zinc-600">{rec.recordingYear}</span>}
+                              {rec.releaseLabel && <span className="text-[10px] text-zinc-600">{rec.releaseLabel}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {result.recordings.length > 50 && (
+                        <p className="text-xs text-zinc-600 text-center py-2">Showing 50 of {result.recordings.length} recordings</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                onClick={onClose}
+                className="w-full py-2.5 rounded-xl text-xs font-semibold text-zinc-400 bg-[#1e1e1e] hover:bg-[#2e2e2e] transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── WORKS & RECORDINGS TAB ──────────────────────────────────────────────────
 function WorksTab({
   artist, isPaid, onSubscribe, onSendChat, onRoyaltyAudit,
@@ -1204,6 +1529,7 @@ function WorksTab({
   onRoyaltyAudit: () => void;
 }) {
   const releases = artist.allReleases || [];
+  const [showSEAudit, setShowSEAudit] = React.useState(false);
   const btn = (label: string, msg: string) => (
     <button
       onClick={() => isPaid ? onSendChat(msg) : onSubscribe()}
@@ -1214,12 +1540,15 @@ function WorksTab({
   );
   return (
     <div className="flex flex-col gap-6">
+      {showSEAudit && isPaid && (
+        <SoundExchangeAuditModal artist={artist} onClose={() => setShowSEAudit(false)} />
+      )}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-base font-semibold text-white">Works & Recordings</h2>
           <p className="text-sm text-zinc-500 mt-1">{releases.length} releases found on Spotify</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {btn("📋 Capture Song Splits", `Let's capture song splits for ${artist.name}'s catalog. Walk me through the ownership splits for all ${releases.length} releases — who owns what percentage of publishing and master rights.`)}
           <button
             onClick={() => isPaid ? onRoyaltyAudit() : onSubscribe()}
@@ -1227,24 +1556,47 @@ function WorksTab({
           >
             🔍 Run Royalty Audit
           </button>
+          <button
+            onClick={() => isPaid ? setShowSEAudit(true) : onSubscribe()}
+            className="px-3 py-2 rounded-lg text-xs font-semibold text-white bg-[#1e1e1e] hover:bg-[#2e2e2e] border border-[#6366f1]/30 hover:border-[#6366f1]/60 transition-all"
+          >
+            🎵 SoundExchange Audit
+          </button>
         </div>
       </div>
 
-      <div className={`border rounded-xl p-4 flex items-start gap-3 ${isPaid ? "bg-[#0d1a12] border-emerald-500/30" : "bg-[#111] border-[#1e1e1e]"}`}>
-        <span className="text-xl mt-0.5">💰</span>
-        <div>
-          <p className={`text-sm font-semibold mb-1 ${isPaid ? "text-emerald-400" : "text-white"}`}>Royalty Audit {isPaid ? "Available" : "— Activate to Run"}</p>
-          <p className="text-xs text-zinc-400 leading-relaxed">
-            Helm will compare your top {Math.min(10, releases.length)} recordings against ASCAP/BMI,
-            the MLC, and SoundExchange to find unregistered works. Any gaps = Helm enrolls them through
-            <strong className="text-white"> Good Morning Publishing Admin + Distribution</strong> with your approval.
-          </p>
-          <button
-            onClick={() => isPaid ? onRoyaltyAudit() : onSubscribe()}
-            className={`inline-block mt-2 text-xs font-semibold transition-colors ${isPaid ? "text-emerald-400 hover:text-emerald-300" : "text-[#6366f1] hover:text-[#818cf8]"}`}
-          >
-            {isPaid ? "Start audit →" : "Activate to start →"}
-          </button>
+      {/* Royalty audit cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className={`border rounded-xl p-4 flex items-start gap-3 ${isPaid ? "bg-[#0d1a12] border-emerald-500/30" : "bg-[#111] border-[#1e1e1e]"}`}>
+          <span className="text-xl mt-0.5">💰</span>
+          <div>
+            <p className={`text-sm font-semibold mb-1 ${isPaid ? "text-emerald-400" : "text-white"}`}>PRO Royalty Audit</p>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Compare your top {Math.min(10, releases.length)} recordings against ASCAP/BMI and the MLC.
+            </p>
+            <button
+              onClick={() => isPaid ? onRoyaltyAudit() : onSubscribe()}
+              className={`inline-block mt-2 text-xs font-semibold transition-colors ${isPaid ? "text-emerald-400 hover:text-emerald-300" : "text-[#6366f1] hover:text-[#818cf8]"}`}
+            >
+              {isPaid ? "Start audit →" : "Activate to start →"}
+            </button>
+          </div>
+        </div>
+
+        <div className={`border rounded-xl p-4 flex items-start gap-3 ${isPaid ? "bg-[#0d1020] border-[#6366f1]/30" : "bg-[#111] border-[#1e1e1e]"}`}>
+          <span className="text-xl mt-0.5">🎵</span>
+          <div>
+            <p className={`text-sm font-semibold mb-1 ${isPaid ? "text-[#a5b4fc]" : "text-white"}`}>SoundExchange Audit</p>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Verify your catalog is registered for digital performance royalties — Spotify, Apple Music, Pandora, SiriusXM.
+            </p>
+            <button
+              onClick={() => isPaid ? setShowSEAudit(true) : onSubscribe()}
+              className={`inline-block mt-2 text-xs font-semibold transition-colors ${isPaid ? "text-[#a5b4fc] hover:text-[#c7d2fe]" : "text-[#6366f1] hover:text-[#818cf8]"}`}
+            >
+              {isPaid ? "Run audit →" : "Activate to start →"}
+            </button>
+          </div>
         </div>
       </div>
 
