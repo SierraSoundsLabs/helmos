@@ -1304,15 +1304,16 @@ function WorksTab({
 
 // ─── RELEASE MARKETING TAB ───────────────────────────────────────────────────
 function ReleaseMarketingTab({
-  artist, isPaid, onSubscribe, onSendChat,
+  artist, isPaid, onSubscribe, onSendChat, hasBio,
 }: {
   artist: ArtistData;
   isPaid: boolean;
   onSubscribe: () => void;
   onSendChat: (text: string) => void;
+  hasBio?: boolean;
 }) {
-  const items = [
-    { icon: "✍️", title: "Create Artist Bio",         desc: "Interview-crafted bio in 3 lengths — saved to your Links tab",                                                          msg: "Write my artist bio" },
+  const allItems = [
+    { icon: "✍️", title: "Create Artist Bio",         desc: "Interview-crafted bio in 3 lengths — saved to your Links tab",                                                          msg: "Write my artist bio", hiddenWhen: "hasBio" },
     { icon: "🔗", title: "Pre-Save Campaign",       desc: "Create a pre-save link and run fan engagement before release day",                                                          msg: "Help me set up a pre-save campaign for my next release. What platform should I use, how do I set it up, and how do I promote it to maximize pre-saves?" },
     { icon: "📰", title: "Pitch Journalists",         desc: "Find real music journalists covering your genre and pitch your latest single or album",                                      msg: `Find 15 music journalists and editors who actively cover ${(artist.genres||[])[0]||"indie"} artists like ${artist.name}. For each journalist include: their name, publication, recent article they wrote, their email or contact method, and why ${artist.name}'s latest release is a fit for them. Then write a personalized pitch template I can use for each.` },
     { icon: "📣", title: "Press & Playlist Outreach",desc: "Pitch 10 journalists and 50 playlist curators in your genre 4 weeks out",                                                      msg: `Build a press and playlist outreach plan for ${artist.name}. I need: 10 journalist targets, 50 playlist curator targets in the ${(artist.genres||[])[0]||"my"} genre, and a pitch template for each.` },
@@ -1324,6 +1325,7 @@ function ReleaseMarketingTab({
     { icon: "📺", title: "YouTube Premiere",         desc: "Set up a YouTube premiere + community post strategy",                                                                         msg: `Help me set up a YouTube premiere for ${artist.name}'s next release. What do I need to prepare, how do I build anticipation, and what community posts should I make?` },
     { icon: "🎙️", title: "Podcast Pitch",            desc: "Find 10 music podcasts in your genre and pitch a story",                                                                     msg: `Find 10 music podcasts relevant to ${artist.name}'s genre (${(artist.genres||[])[0]||"indie music"}) and write a pitch template I can use to get featured.` },
   ];
+  const items = allItems.filter(item => !(item.hiddenWhen === "hasBio" && hasBio));
 
   return (
     <div className="flex flex-col gap-6">
@@ -1385,8 +1387,13 @@ function LinksTab({
   const [copiedLinks, setCopiedLinks] = useState<string | null>(null);
   const [copiedOneSheet, setCopiedOneSheet] = useState(false);
   const [published, setPublished] = useState<boolean | null>(null);
-  const [savedBio, setSavedBio] = useState<{ short: string; medium: string; savedAt: string } | null>(null);
+  const [savedBio, setSavedBio] = useState<{ short: string; medium: string; long: string; savedAt: string } | null>(null);
   const [copiedBio, setCopiedBio] = useState<string | null>(null);
+  const [editingBio, setEditingBio] = useState(false);
+  const [editShort, setEditShort] = useState("");
+  const [editMedium, setEditMedium] = useState("");
+  const [editLong, setEditLong] = useState("");
+  const [savingBio, setSavingBio] = useState(false);
   const [songLinks, setSongLinks] = useState<SongLinkEntry[]>([]);
   const [showSongForm, setShowSongForm] = useState(false);
   const [songFormRelease, setSongFormRelease] = useState<{name:string;albumArt?:string;spotifyUrl?:string;releaseDate?:string;type?:string} | null>(null);
@@ -1538,51 +1545,74 @@ function LinksTab({
             <h2 className="text-sm font-semibold text-white">Artist Bio</h2>
             <p className="text-xs text-zinc-500 mt-0.5">{savedBio ? `Last updated ${new Date(savedBio.savedAt).toLocaleDateString()}` : "Interview-crafted bio for press kits & profiles"}</p>
           </div>
-          {savedBio && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full shrink-0">SAVED</span>}
+          <div className="flex items-center gap-2 shrink-0">
+            {savedBio && !editingBio && (
+              <button
+                onClick={() => { setEditShort(savedBio.short); setEditMedium(savedBio.medium); setEditLong(savedBio.long || ""); setEditingBio(true); }}
+                className="text-[10px] font-medium text-zinc-400 hover:text-zinc-200 bg-[#1e1e1e] hover:bg-[#2e2e2e] px-2 py-0.5 rounded-full transition-colors"
+              >Edit</button>
+            )}
+            {savedBio && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">SAVED</span>}
+          </div>
         </div>
         {savedBio ? (
+          editingBio ? (
+            <div className="flex flex-col gap-3">
+              {([{label:"Short (50 words)",val:editShort,set:setEditShort},{label:"Medium (150 words)",val:editMedium,set:setEditMedium},{label:"Long (300 words)",val:editLong,set:setEditLong}] as {label:string;val:string;set:(v:string)=>void}[]).map(({label,val,set}) => (
+                <div key={label} className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3">
+                  <p className="text-[10px] text-zinc-500 mb-1.5 uppercase tracking-wider">{label}</p>
+                  <textarea
+                    value={val}
+                    onChange={e => set(e.target.value)}
+                    rows={label.startsWith("Long") ? 8 : label.startsWith("Medium") ? 5 : 3}
+                    className="w-full bg-transparent text-xs text-zinc-300 leading-relaxed resize-none outline-none focus:ring-1 focus:ring-[#6366f1]/40 rounded"
+                  />
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <button
+                  disabled={savingBio}
+                  onClick={async () => {
+                    setSavingBio(true);
+                    try {
+                      const res = await fetch("/api/helm/bio", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ artistId: artist.id, artistName: artist.name, short: editShort, medium: editMedium, long: editLong }),
+                      });
+                      const data = await res.json();
+                      if (data.ok) { setSavedBio(data.bio); setEditingBio(false); }
+                    } finally { setSavingBio(false); }
+                  }}
+                  className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+                >{savingBio ? "Saving…" : "Save Changes"}</button>
+                <button onClick={() => setEditingBio(false)} className="px-3 py-2 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors">Cancel</button>
+              </div>
+            </div>
+          ) : (
           <div className="flex flex-col gap-3">
-            <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3">
-              <p className="text-[10px] text-zinc-500 mb-1.5 uppercase tracking-wider">Short (50 words)</p>
-              <p className="text-xs text-zinc-300 leading-relaxed">{savedBio.short}</p>
-            </div>
-            <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3">
-              <p className="text-[10px] text-zinc-500 mb-1.5 uppercase tracking-wider">Medium (150 words)</p>
-              <p className="text-xs text-zinc-300 leading-relaxed line-clamp-4">{savedBio.medium}</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(savedBio.short).catch(() => {});
-                  setCopiedBio("short");
-                  setTimeout(() => setCopiedBio(null), 2000);
-                }}
-                className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                  copiedBio === "short" ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e]"
-                }`}
-              >
-                {copiedBio === "short" ? "Copied!" : "Copy Short"}
-              </button>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(savedBio.medium).catch(() => {});
-                  setCopiedBio("medium");
-                  setTimeout(() => setCopiedBio(null), 2000);
-                }}
-                className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                  copiedBio === "medium" ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e]"
-                }`}
-              >
-                {copiedBio === "medium" ? "Copied!" : "Copy Medium"}
-              </button>
+            {([{label:"Short (50 words)",val:savedBio.short,key:"short" as const},{label:"Medium (150 words)",val:savedBio.medium,key:"medium" as const},{label:"Long (300 words)",val:savedBio.long,key:"long" as const}]).map(({label,val,key}) => val ? (
+              <div key={key} className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3">
+                <p className="text-[10px] text-zinc-500 mb-1.5 uppercase tracking-wider">{label}</p>
+                <p className="text-xs text-zinc-300 leading-relaxed">{val}</p>
+              </div>
+            ) : null)}
+            <div className="flex gap-2 flex-wrap">
+              {([{key:"short" as const,label:"Copy Short"},{key:"medium" as const,label:"Copy Medium"},{key:"long" as const,label:"Copy Long"}]).map(({key,label}) => savedBio[key] ? (
+                <button key={key}
+                  onClick={() => { navigator.clipboard.writeText(savedBio[key]).catch(() => {}); setCopiedBio(key); setTimeout(() => setCopiedBio(null), 2000); }}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                    copiedBio === key ? "bg-emerald-500/20 text-emerald-400" : "bg-[#1e1e1e] text-zinc-300 hover:bg-[#2e2e2e]"
+                  }`}
+                >{copiedBio === key ? "Copied!" : label}</button>
+              ) : null)}
               <button
                 onClick={() => onSendChat("Rewrite my bio with updated information")}
                 className="px-3 py-2 rounded-lg text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors"
-              >
-                Refresh
-              </button>
+              >Regenerate</button>
             </div>
           </div>
+          )
         ) : (
           <div className="flex flex-col gap-3">
             <div className="text-center py-4">
@@ -3366,6 +3396,7 @@ function DashboardContent() {
             isPaid={isPaid}
             onSubscribe={handleSubscribe}
             onSendChat={(msg) => { handleSendChat(msg); }}
+            hasBio={hasSavedBio}
           />
         )}
         {mode !== "queue" && activeTab === "links" && (
