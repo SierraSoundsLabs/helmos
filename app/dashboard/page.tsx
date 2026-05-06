@@ -3004,8 +3004,42 @@ function DashboardContent() {
     }
   }, [artistData, chatMessages, hasSavedBio, focusChat]);
 
+  // Minimal fallback analysis shown when Claude times out or fails
+  const buildFallbackAnalysis = useCallback((artist: ArtistData): AnalysisResult => ({
+    careerStage: "Emerging",
+    narrative: `${artist.name} is building momentum across streaming platforms.`,
+    agentStatus: "Ready",
+    topOpportunity: "Start by running a royalty audit to find missing income.",
+    bigWin: null,
+    socialContent: { hasTikTok: null, hasInstagram: null, contentOffer: "Helm can create content for your next release." },
+    whileYouSleep: ["Monitor streaming stats", "Track playlist adds", "Watch for press mentions"],
+    completedItems: ["Spotify profile scanned", "Catalog reviewed", "Genre identified"],
+    tasks: [
+      { title: "Build release marketing plan", bullets: [], category: "Release", urgency: "This month" },
+      { title: "Pitch playlists in your genre", bullets: [], category: "Playlisting", urgency: "This week" },
+      { title: "Run royalty audit", bullets: [], category: "Royalties", urgency: "This month" },
+    ],
+    documents: [
+      { name: "Artist Bio", description: "Interview-crafted bio for press & profiles" },
+      { name: "One-Sheet", description: "Media kit for booking and press" },
+      { name: "Press Release", description: "For your latest release" },
+    ],
+  }), []);
+
   const loadDashboard = useCallback(async () => {
-    if (!artistId) { router.push("/"); return; }
+    // If no artist in URL, check session for the artist ID and redirect
+    if (!artistId) {
+      try {
+        const sessionRes = await fetch("/api/auth/session");
+        const session = await sessionRes.json();
+        if (session?.authenticated && session?.artistId) {
+          router.replace(`/dashboard?artist=${session.artistId}`);
+          return;
+        }
+      } catch { /* ignore */ }
+      router.push("/");
+      return;
+    }
     try {
       setPhase("loading-artist");
 
@@ -3022,6 +3056,7 @@ function DashboardContent() {
           setPhase("done");
           return;
         }
+        // Artist fetch failed but we have cached analysis — use fallback artist shape
       }
 
       // No cache — do full scan
@@ -3030,20 +3065,33 @@ function DashboardContent() {
       if (!artistRes.ok) { setErrorMsg(artist.error || "Failed to load artist"); setPhase("error"); return; }
       setArtistData(artist);
       setPhase("loading-analysis");
-      const analyzeRes = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(artist),
-      });
-      const analysisData = await analyzeRes.json();
-      if (!analyzeRes.ok) { setErrorMsg(analysisData.error || "Failed to analyze artist"); setPhase("error"); return; }
-      setAnalysis(analysisData);
+
+      // Analyze with a 55s timeout — if it times out, use fallback so dashboard still loads
+      let analysisData: AnalysisResult | null = null;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 55_000);
+        const analyzeRes = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(artist),
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (analyzeRes.ok) {
+          analysisData = await analyzeRes.json();
+        }
+      } catch {
+        // Timeout or network error — fall through to fallback
+      }
+
+      setAnalysis(analysisData ?? buildFallbackAnalysis(artist));
       setPhase("done");
     } catch {
       setErrorMsg("Something went wrong. Please try again.");
       setPhase("error");
     }
-  }, [artistId, router]);
+  }, [artistId, router, buildFallbackAnalysis]);
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
 

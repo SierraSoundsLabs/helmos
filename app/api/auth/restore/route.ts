@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
       );
       if (paidSession) {
         customerId = customer.id;
-        artistId = paidSession.metadata?.artist_id ?? "";
+        // Prefer customer metadata (self-serve artist change), fall back to checkout session
+        artistId = customer.metadata?.artist_id || paidSession.metadata?.artist_id || "";
         break;
       }
     }
