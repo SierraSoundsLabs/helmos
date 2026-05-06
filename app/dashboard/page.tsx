@@ -804,13 +804,15 @@ function PaidMediaModal({
 
 // ─── HELM CHAT (PAID) ─────────────────────────────────────────────────────────
 function HelmChat({
-  artistData, messages, onSend, isStreaming, isWaitingForUser,
+  artistData, messages, onSend, isStreaming, isWaitingForUser, hasBio, hasOneSheet,
 }: {
   artistData: ArtistData;
   messages: ChatMessage[];
   onSend: (text: string) => void;
   isStreaming: boolean;
   isWaitingForUser?: boolean;
+  hasBio?: boolean;
+  hasOneSheet?: boolean;
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -875,13 +877,13 @@ function HelmChat({
             </div>
             <div className="flex flex-col gap-2 w-full mt-1">
               {[
-                { emoji: "✍️", label: "Write my artist bio", sub: "Interview-crafted, saves to Links" },
-                { emoji: "📄", label: "Make me a one-sheet", sub: "For booking agents & press" },
-                { emoji: "🚀", label: "Build a release plan", sub: "For my next drop" },
-                { emoji: "📰", label: "Write a press release", sub: "For my latest project" },
-                { emoji: "📈", label: "How do I grow faster?", sub: "Get a custom strategy" },
-              ].map(({ emoji, label, sub }) => (
-                <button key={label} onClick={() => onSend(label)}
+                !hasBio      && { emoji: "✍️", label: "Write my artist bio",         sub: "Interview-crafted, saves to Links",       msg: "Write my artist bio" },
+                !hasOneSheet && { emoji: "📄", label: "Make me a one-sheet",          sub: "For booking agents & press",              msg: "Generate and publish my artist one-sheet" },
+                               { emoji: "📈", label: "How do I grow faster?",        sub: "Get a custom strategy for my career",     msg: `How do I grow faster as ${artistData.name}? Give me a specific strategy based on my stats.` },
+                               { emoji: "🎯", label: "Find playlist curators",        sub: "Curators who fit my genre",               msg: "Find 20 playlist curators who would be a good fit for my music" },
+                               { emoji: "💬", label: "What should I do this week?",  sub: "Your top 3 priorities right now",         msg: "What are the top 3 things I should focus on this week to grow my career?" },
+              ].filter((x): x is { emoji: string; label: string; sub: string; msg: string } => Boolean(x)).map(({ emoji, label, sub, msg }) => (
+                <button key={label} onClick={() => onSend(msg)}
                   className="text-left bg-[#0d0d0d] hover:bg-[#161616] border border-[#1e1e1e] hover:border-[#6366f1]/40 rounded-xl px-4 py-3 transition-all group">
                   <div className="flex items-center gap-3">
                     <span className="text-base">{emoji}</span>
@@ -963,7 +965,7 @@ function HelmChat({
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({
-  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks, chatPanelRef,
+  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks, chatPanelRef, hasBio, hasOneSheet,
 }: {
   artistData: ArtistData;
   analysis: AnalysisResult;
@@ -978,6 +980,8 @@ function OverviewTab({
   onNewOpportunityCount?: (count: number) => void;
   realTasks?: { id: string; title: string; status: string; type: string }[];
   chatPanelRef?: React.RefObject<HTMLDivElement>;
+  hasBio?: boolean;
+  hasOneSheet?: boolean;
 }) {
   const stage = analysis.careerStage || "Emerging";
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
@@ -1134,6 +1138,8 @@ function OverviewTab({
             onSend={onSendChat}
             isStreaming={isChatStreaming}
             isWaitingForUser={isChatWaitingForUser}
+            hasBio={hasBio}
+            hasOneSheet={hasOneSheet}
           />
         ) : (
           // Pre-paid preview panel
@@ -2628,6 +2634,7 @@ function DashboardContent() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [savedBioAt, setSavedBioAt] = useState<string | null>(null);
   const [hasSavedBio, setHasSavedBio] = useState(false);
+  const [hasOneSheet, setHasOneSheet] = useState(false);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [isChatWaitingForUser, setIsChatWaitingForUser] = useState(false);
 
@@ -2663,6 +2670,15 @@ function DashboardContent() {
       .then(d => { if (d?.bio) setHasSavedBio(true); })
       .catch(() => {});
   }, [artistId, savedBioAt]);
+
+  // Check if artist has a published one-sheet
+  useEffect(() => {
+    if (!artistData) return;
+    const slug = artistData.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    fetch(`/api/helm/onesheet/${slug}`)
+      .then(r => { if (r.ok) setHasOneSheet(true); })
+      .catch(() => {});
+  }, [artistData]);
 
   // Fetch real tasks from the queue
   useEffect(() => {
@@ -3391,6 +3407,8 @@ function DashboardContent() {
             onNewOpportunityCount={setOpportunityCount}
             realTasks={realTasks}
             chatPanelRef={chatPanelRef}
+            hasBio={hasSavedBio}
+            hasOneSheet={hasOneSheet}
           />
         )}
         {mode !== "queue" && activeTab === "works" && (
