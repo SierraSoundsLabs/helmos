@@ -49,6 +49,7 @@ export default async function LinksPage({ params }: Props) {
     data.socialLinks.instagram && { icon: "📸", label: "Instagram", url: data.socialLinks.instagram },
     data.socialLinks.tiktok && { icon: "🎬", label: "TikTok", url: data.socialLinks.tiktok },
     data.socialLinks.youtube && { icon: "▶️", label: "YouTube", url: data.socialLinks.youtube },
+    data.socialLinks.appleMusic && { icon: "🍎", label: "Apple Music", url: data.socialLinks.appleMusic },
     data.socialLinks.website && { icon: "🌐", label: "Website", url: data.socialLinks.website },
   ].filter(Boolean) as { icon: string; label: string; url: string }[];
 

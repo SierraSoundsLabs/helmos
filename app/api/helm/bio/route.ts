@@ -17,6 +17,7 @@ export interface SavedBio {
 function stripMarkdown(text: string): string {
   return text
     .replace(/^#{1,6}\s+/gm, "")          // ## headings
+    .replace(/^(?:Short|Medium|Long)\s+Bio[^\n]*/gim, "") // "Short Bio (50 words)" labels
     .replace(/\*\*([^*]+)\*\*/g, "$1")   // **bold**
     .replace(/\*([^*]+)\*/g, "$1")        // *italic*
     .replace(/^[-–—]\s*/gm, "")           // leading dashes

@@ -6,6 +6,17 @@ import type { OneSheetData } from "@/lib/types";
 import { artistSlug } from "@/lib/types";
 import type { EPKData } from "@/app/api/helm/epk/route";
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^(?:Short|Medium|Long)\s+Bio[^\n]*\n?/gim, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^[-–—]\s*/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export async function POST(req: NextRequest) {
   const session = getSession(req);
   if (!session) {
@@ -34,7 +45,7 @@ export async function POST(req: NextRequest) {
     artistId: artistData.id,
     artistName: artistData.name,
     slug,
-    bio: bio || artistData.bio || epk?.shortBio || "",
+    bio: stripMarkdown(bio || artistData.bio || epk?.shortBio || ""),
     photoUrl: artistData.image || "",
     genres: artistData.genres || [],
     monthlyListeners: artistData.monthlyListeners || 0,
@@ -55,6 +66,7 @@ export async function POST(req: NextRequest) {
     socialLinks: {
       spotify: artistData.spotifyUrl || undefined,
       ...(epk?.socialLinks ?? {}),
+      appleMusic: epk?.socialLinks?.appleMusic || undefined,
     },
     pressQuotes,
     bookingEmail: epk ? session.email : undefined,

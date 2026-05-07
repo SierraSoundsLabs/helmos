@@ -15,6 +15,7 @@ export interface OneSheetData {
     instagram?: string;
     tiktok?: string;
     youtube?: string;
+    appleMusic?: string;
     website?: string;
   };
   pressQuotes?: string[];

@@ -30,6 +30,7 @@ export interface EPKData {
     instagram?: string;
     tiktok?: string;
     youtube?: string;
+    appleMusic?: string;
     website?: string;
   };
   shortBio: string;

@@ -1763,6 +1763,9 @@ function LinksTab({
   const [savingBio, setSavingBio] = useState(false);
   const [songLinks, setSongLinks] = useState<SongLinkEntry[]>([]);
   const [showSongForm, setShowSongForm] = useState(false);
+  const [socialLinks, setSocialLinksState] = useState({ instagram: "", tiktok: "", youtube: "", appleMusic: "", website: "" });
+  const [savingSocial, setSavingSocial] = useState(false);
+  const [savedSocial, setSavedSocial] = useState(false);
   const [songFormRelease, setSongFormRelease] = useState<{name:string;albumArt?:string;spotifyUrl?:string;releaseDate?:string;type?:string} | null>(null);
   const [songFormExtra, setSongFormExtra] = useState({ appleMusicUrl: "", youtubeUrl: "", presaveUrl: "", bio: "" });
   const [songFormSaving, setSongFormSaving] = useState(false);
@@ -1797,6 +1800,18 @@ function LinksTab({
       .then(data => { if (data?.links) setSongLinks(data.links); })
       .catch(() => {});
   }, [artist.id, isPaid]);
+
+  // Fetch existing social links from EPK profile
+  useEffect(() => {
+    fetch(`/api/helm/epk/social?artistId=${artist.id}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.socialLinks) {
+          setSocialLinksState(prev => ({ ...prev, ...data.socialLinks }));
+        }
+      })
+      .catch(() => {});
+  }, [artist.id]);
 
   const copyToClipboard = (text: string, which: "links" | "onesheet") => {
     navigator.clipboard.writeText(text).catch(() => {});
@@ -1909,7 +1924,7 @@ function LinksTab({
       <div className={`rounded-xl p-5 border ${savedBio ? "bg-[#111] border-[#1e1e1e]" : "border-dashed border-[#2e2e2e] bg-[#0d0d0d]"}`}>
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-sm font-semibold text-white">Artist Bio</h2>
+            <h2 className="text-sm font-semibold text-white">Bio</h2>
             <p className="text-xs text-zinc-500 mt-0.5">{savedBio ? `Last updated ${new Date(savedBio.savedAt).toLocaleDateString()}` : "Interview-crafted bio for press kits & profiles"}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -1925,7 +1940,7 @@ function LinksTab({
         {savedBio ? (
           editingBio ? (
             <div className="flex flex-col gap-3">
-              {([{label:"Short (50 words)",val:editShort,set:setEditShort},{label:"Medium (150 words)",val:editMedium,set:setEditMedium},{label:"Long (300 words)",val:editLong,set:setEditLong}] as {label:string;val:string;set:(v:string)=>void}[]).map(({label,val,set}) => (
+              {([{label:"Short",val:editShort,set:setEditShort},{label:"Medium",val:editMedium,set:setEditMedium},{label:"Long",val:editLong,set:setEditLong}] as {label:string;val:string;set:(v:string)=>void}[]).map(({label,val,set}) => (
                 <div key={label} className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3">
                   <p className="text-[10px] text-zinc-500 mb-1.5 uppercase tracking-wider">{label}</p>
                   <textarea
@@ -1958,7 +1973,7 @@ function LinksTab({
             </div>
           ) : (
           <div className="flex flex-col gap-3">
-            {([{label:"Short (50 words)",val:savedBio.short,key:"short" as const},{label:"Medium (150 words)",val:savedBio.medium,key:"medium" as const},{label:"Long (300 words)",val:savedBio.long,key:"long" as const}]).map(({label,val,key}) => val ? (
+            {([{label:"Short",val:savedBio.short,key:"short" as const},{label:"Medium",val:savedBio.medium,key:"medium" as const},{label:"Long",val:savedBio.long,key:"long" as const}]).map(({label,val,key}) => val ? (
               <div key={key} className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3">
                 <p className="text-[10px] text-zinc-500 mb-1.5 uppercase tracking-wider">{label}</p>
                 <p className="text-xs text-zinc-300 leading-relaxed">{val}</p>
@@ -1995,6 +2010,54 @@ function LinksTab({
             </button>
           </div>
         )}
+      </div>
+
+      {/* Social Links card */}
+      <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Social Links</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">Added to your links page, one-sheet &amp; EPK</p>
+          </div>
+          {savedSocial && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full shrink-0">SAVED</span>}
+        </div>
+        <div className="flex flex-col gap-2 mb-3">
+          {([
+            { key: "instagram" as const, icon: "📸", placeholder: "https://instagram.com/yourhandle" },
+            { key: "tiktok" as const, icon: "🎬", placeholder: "https://tiktok.com/@yourhandle" },
+            { key: "youtube" as const, icon: "▶️", placeholder: "https://youtube.com/@yourchannel" },
+            { key: "appleMusic" as const, icon: "🍎", placeholder: "https://music.apple.com/artist/..." },
+            { key: "website" as const, icon: "🌐", placeholder: "https://yourwebsite.com" },
+          ] as { key: keyof typeof socialLinks; icon: string; placeholder: string }[]).map(({ key, icon, placeholder }) => (
+            <div key={key} className="flex items-center gap-2 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg px-3 py-2">
+              <span className="text-sm shrink-0">{icon}</span>
+              <input
+                type="url"
+                value={socialLinks[key]}
+                onChange={e => setSocialLinksState(prev => ({ ...prev, [key]: e.target.value }))}
+                placeholder={placeholder}
+                className="flex-1 bg-transparent text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+              />
+            </div>
+          ))}
+        </div>
+        <button
+          disabled={savingSocial}
+          onClick={async () => {
+            setSavingSocial(true);
+            try {
+              await fetch("/api/helm/epk/social", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ artistId: artist.id, socialLinks }),
+              });
+              setSavedSocial(true);
+              setTimeout(() => setSavedSocial(false), 3000);
+            } finally { setSavingSocial(false); }
+          }}
+          className="w-full px-3 py-2 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+        >{savingSocial ? "Saving…" : "Save Social Links"}</button>
       </div>
 
       {/* Song Smart Links card */}
