@@ -49,6 +49,7 @@ function SocialIcon({ platform }: { platform: string }) {
     instagram: "📸",
     tiktok: "🎬",
     youtube: "▶️",
+    appleMusic: "🍎",
     website: "🌐",
   };
   return <span>{icons[platform] ?? "🔗"}</span>;

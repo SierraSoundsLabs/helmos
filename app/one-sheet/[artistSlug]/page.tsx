@@ -233,6 +233,9 @@ export default async function OneSheetPage({ params }: Props) {
               {data.socialLinks.youtube && (
                 <SocialLink href={data.socialLinks.youtube} label="YouTube" />
               )}
+              {data.socialLinks.appleMusic && (
+                <SocialLink href={data.socialLinks.appleMusic} label="Apple Music" />
+              )}
               {data.socialLinks.website && (
                 <SocialLink href={data.socialLinks.website} label={data.socialLinks.website.replace(/^https?:\/\//, "")} />
               )}
