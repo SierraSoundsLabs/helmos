@@ -26,16 +26,20 @@ function stripMarkdown(text: string): string {
     .trim();
 }
 
-/** Extract a bio section by label, return plain text */
+/** Extract a bio section by heading label, stripping markdown from the result */
 function extractSection(content: string, ...labels: string[]): string {
   for (const label of labels) {
-    // Match ## Short Bio (50 words), **Short Bio (50 words)**, Short Bio (50 words):, etc.
+    // Match: ## Short Bio (50 words)\n\n<content>\n\n## Next Section or end
     const pattern = new RegExp(
-      `(?:#{1,3}\\s*|\\*\\*)?${label}[^\\n]*(?:\\*\\*)?[:\\s]*\\n+([\\s\\S]+?)(?=\\n{2,}(?:#{1,3}\\s+|\\*\\*[A-Z])|$)`,
+      `##\\s*${label}[^\\n]*\\n+([\\s\\S]+?)(?=\\n##|\\Z)`,
       "i"
     );
     const m = content.match(pattern);
-    if (m?.[1]) return stripMarkdown(m[1]);
+    if (m?.[1]) {
+      // Strip trailing --- separators and clean up
+      const cleaned = m[1].replace(/\n---\s*$/, "").trim();
+      return stripMarkdown(cleaned);
+    }
   }
   return "";
 }
