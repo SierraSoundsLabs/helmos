@@ -3158,6 +3158,7 @@ function DashboardContent() {
     try {
       const res = await fetch("/api/helm/chat", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages,
