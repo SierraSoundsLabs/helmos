@@ -3145,20 +3145,24 @@ function DashboardContent() {
         const context = sendEmailMatch[2] || "";
         fetch("/api/helm/outreach/chat-send", {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ artistData, toEmail, context }),
-        }).then(r => r.json()).then(data => {
+        }).then(async r => {
+          const data = await r.json();
           let statusMsg;
           if (data.status === "sent") {
             statusMsg = `✅ Email sent to ${toEmail}\n**Subject:** ${data.subject}\n\nCheck the Outreach tab to see it in your sent history.`;
+          } else if (data.error) {
+            statusMsg = `❌ Failed to send email to ${toEmail}: ${data.error} (${r.status})`;
           } else if (data.reason) {
             statusMsg = `⚠️ **Couldn't send to ${toEmail}**\n\n${data.reason}`;
           } else {
             statusMsg = `❌ Failed to send email to ${toEmail}. Please try again or use the Outreach tab.`;
           }
           setChatMessages(prev => [...prev, { role: "assistant", content: statusMsg }]);
-        }).catch(() => {
-          setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Something went wrong sending the email. Please try the Outreach tab.` }]);
+        }).catch((err) => {
+          setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Something went wrong sending the email: ${err?.message || "unknown error"}. Please try the Outreach tab.` }]);
         });
       }
 
