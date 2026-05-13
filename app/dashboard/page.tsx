@@ -1054,7 +1054,9 @@ function OverviewTab({
               <h2 className="text-sm font-semibold text-white mb-3">Quick Actions</h2>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { label: "📄 Create One-Sheet",           desc: "Artist media kit from Spotify data",            doc: "one-sheet" as DocType },
+                  hasOneSheet
+                    ? { label: "📝 Update One-Sheet",        desc: "Tell Helm what to change",                       msg: "I want to update my one-sheet. What specifically should I update — bio, latest release, social links, contact info, or something else? Let me know and I'll regenerate it." }
+                    : { label: "📄 Create One-Sheet",        desc: "Artist media kit from Spotify data",            doc: "one-sheet" as DocType },
                   { label: "🔍 PRO Royalty Audit",          desc: "Compare recordings vs ASCAP/BMI & MLC",         royaltyAudit: true },
                   { label: "🎵 SoundExchange Audit",        desc: "Verify digital performance royalty registration", seAudit: true },
                   { label: "🔗 Pre-Save Strategy",          desc: "Plan your next release pre-save campaign",       msg: "I have an upcoming release and need a pre-save strategy. Walk me through what to set up and how to promote it." },
