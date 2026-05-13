@@ -131,6 +131,9 @@ export async function POST(req: NextRequest) {
   await kvSet(`onesheet:${slug}`, data);
   // Also save to the artist-keyed path for the new API route
   await kvSet(`helm:artist:${artistData.id}:one-sheet-data`, data);
+  // Reverse mapping so the inbound-mail webhook can forward
+  // {slug}@helmos.co to the artist's real email (Task 4).
+  await kvSet(`helm:slug_email:${slug}`, session.email);
 
   // Report which user-supplied socials are still missing so the
   // frontend can prompt the artist to add them via the Links tab.

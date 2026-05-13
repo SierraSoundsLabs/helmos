@@ -5,6 +5,7 @@
 
 import { NextRequest } from "next/server";
 import { kvGet, kvSet } from "@/lib/kv";
+import { sendEmail } from "@/lib/email";
 import crypto from "crypto";
 
 export interface InboundEmail {
@@ -106,6 +107,39 @@ export async function POST(req: NextRequest) {
   const idsKey = `inbox-ids:${artistSlug}`;
   const existing = (await kvGet<string[]>(idsKey)) ?? [];
   await kvSet(idsKey, [...existing, id]);
+
+  // Task 4 — forward to the artist's real email so they actually see it.
+  // The slug→email mapping is written by /api/helm/onesheet/publish and
+  // any future flow that knows the artist's real email.
+  const artistRealEmail = await kvGet<string>(`helm:slug_email:${artistSlug}`);
+  if (artistRealEmail) {
+    try {
+      const subjectLine = `[Helm] ${subject}`;
+      const headerBlock =
+        `Sent to your manager email (${toAddress})\n` +
+        `From: ${fromName ? `${fromName} <${from}>` : from}\n` +
+        `Reply to this email to respond directly to the sender.\n` +
+        `────────────────────────────────────────\n\n`;
+      await sendEmail({
+        to: artistRealEmail,
+        from: `Helm Manager <${toAddress}>`,
+        replyTo: from,
+        subject: subjectLine,
+        text: headerBlock + text,
+        html: html
+          ? `<div style="font-family:sans-serif;color:#666;font-size:13px;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:16px">
+               Sent to your manager email (<strong>${toAddress}</strong>)<br/>
+               From: ${fromName ? `${fromName} &lt;${from}&gt;` : from}<br/>
+               <em>Reply to this email to respond directly to the sender.</em>
+             </div>${html}`
+          : headerBlock.replace(/\n/g, "<br/>") + text.replace(/\n/g, "<br/>"),
+        headers: inReplyTo ? { "In-Reply-To": inReplyTo } : undefined,
+      });
+    } catch (err) {
+      console.error("inbound forward failed", err);
+      // Non-fatal — email is still stored in KV inbox for retrieval
+    }
+  }
 
   return new Response(JSON.stringify({ ok: true, id }), {
     headers: { "Content-Type": "application/json" },
