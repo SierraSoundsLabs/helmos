@@ -49,6 +49,31 @@ export async function POST(req: NextRequest) {
   const topTracks = (artistData.topTracks || []).slice(0, 5)
     .map(t => t.name).join(", ");
 
+  // Task 5: pull past outreach so Claude doesn't suggest contacting the
+  // same person/publication twice.
+  interface PastOutreach { to?: string; toName?: string; toPublication?: string }
+  const pastIds = (await kvGet<string[]>(`outreach-ids:${artistData.id}`)) ?? [];
+  const pastRecords = (await Promise.all(
+    pastIds.map(id => kvGet<PastOutreach>(`outreach:${artistData.id}:${id}`))
+  )).filter((r): r is PastOutreach => r !== null);
+
+  const contactedEmails = new Set(
+    pastRecords.map(r => (r.to || "").toLowerCase()).filter(Boolean)
+  );
+  const contactedKeys = new Set(
+    pastRecords.map(r => `${(r.toName || "").toLowerCase()}|${(r.toPublication || "").toLowerCase()}`).filter(k => k !== "|")
+  );
+
+  // Surface up to the last 50 in the prompt — covers a typical artist's
+  // history without bloating tokens.
+  const avoidList = pastRecords
+    .slice(-50)
+    .map(r => `  - ${r.toName ?? "(unknown)"} at ${r.toPublication ?? "(no publication)"}${r.to ? ` <${r.to}>` : ""}`)
+    .join("\n");
+  const avoidSection = avoidList
+    ? `\n\nDO NOT INCLUDE any of these contacts — they have already been reached out to. Suggest different people/publications instead:\n${avoidList}\n`
+    : "";
+
   const prompt = `You are a music industry outreach specialist. Given this artist's profile, identify ${safeCount} real outreach targets and write a personalized email for each.
 
 ARTIST PROFILE:
@@ -74,7 +99,7 @@ For each target, write a short, personalized outreach email FROM ${fromEmail}. T
 - Connect the artist's music to why this target would care
 - Be concise (under 150 words)
 - Have a clear, specific ask
-- Sound human, not like a template
+- Sound human, not like a template${avoidSection}
 
 Return a JSON array with exactly ${safeCount} objects. Each object must have these fields:
 {
@@ -106,9 +131,23 @@ Return ONLY the JSON array, no other text.`;
       });
     }
 
-    const drafts: OutreachDraft[] = JSON.parse(jsonMatch[0]);
+    const rawDrafts: OutreachDraft[] = JSON.parse(jsonMatch[0]);
 
-    return new Response(JSON.stringify({ drafts, fromEmail }), {
+    // Belt-and-suspenders dedup in case the model still suggests
+    // a contact that's already been reached out to.
+    const drafts = rawDrafts.filter((d) => {
+      const email = (d.to || "").toLowerCase();
+      const key = `${(d.toName || "").toLowerCase()}|${(d.toPublication || "").toLowerCase()}`;
+      if (email && contactedEmails.has(email)) return false;
+      if (key !== "|" && contactedKeys.has(key)) return false;
+      return true;
+    });
+
+    return new Response(JSON.stringify({
+      drafts,
+      fromEmail,
+      droppedDuplicates: rawDrafts.length - drafts.length,
+    }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {
