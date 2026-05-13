@@ -1532,6 +1532,17 @@ function WorksTab({
 }) {
   const releases = artist.allReleases || [];
   const [showSEAudit, setShowSEAudit] = React.useState(false);
+  // Task 7 — fetch any saved press release so we can surface a
+  // "View Press Release" button in the latest-release card.
+  const [pressRelease, setPressRelease] = React.useState<{ pressRelease: string; subject: string } | null>(null);
+  const [pressModalOpen, setPressModalOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (!artist.id) return;
+    fetch(`/api/helm/press-release?artistId=${artist.id}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.pressRelease) setPressRelease({ pressRelease: d.pressRelease, subject: d.subject }); })
+      .catch(() => { /* no press release yet — fine */ });
+  }, [artist.id]);
   const btn = (label: string, msg: string) => (
     <button
       onClick={() => isPaid ? onSendChat(msg) : onSubscribe()}
@@ -1629,6 +1640,14 @@ function WorksTab({
               </div>
               <p className="text-xs text-zinc-400 mb-3">Quick actions for this release:</p>
               <div className="flex flex-wrap gap-2">
+                {pressRelease && (
+                  <button
+                    onClick={() => setPressModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#6366f1]/15 border border-[#6366f1]/40 text-[#a5b4fc] hover:bg-[#6366f1]/25 hover:text-white transition-all"
+                  >
+                    <span>📰</span> View Press Release
+                  </button>
+                )}
                 {releaseTasks.map(task => (
                   <button
                     key={task.label}
@@ -1643,6 +1662,14 @@ function WorksTab({
           </div>
         );
       })()}
+
+      {pressModalOpen && pressRelease && (
+        <DocModal
+          content={pressRelease.pressRelease}
+          title={pressRelease.subject || "Press Release"}
+          onClose={() => setPressModalOpen(false)}
+        />
+      )}
 
       {/* All releases table */}
       <div className="bg-[#111] border border-[#1e1e1e] rounded-xl overflow-hidden">

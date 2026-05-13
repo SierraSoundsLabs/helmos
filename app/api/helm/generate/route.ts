@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { cookies } from "next/headers";
 import { decodeSession, COOKIE_NAME } from "@/lib/session";
+import { kvSet } from "@/lib/kv";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -167,6 +168,23 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify(bioPayload),
     }).catch(() => {});
+  }
+
+  // Auto-save press release so Works & Recordings tab can show a
+  // "View Press Release" button without rerunning generation.
+  if (type === "press-release" && content && artistData.id) {
+    const firstLine = content.split("\n").find((l) => l.trim().length > 0) ?? "";
+    const subject = firstLine.replace(/^#+\s*/, "").trim() ||
+      `${(artistData.name as string) ?? "Untitled"} — press release`;
+    try {
+      await kvSet(`helm:artist:${artistData.id as string}:press-release:latest`, {
+        pressRelease: content,
+        subject,
+        artistId: artistData.id,
+        generatedAt: new Date().toISOString(),
+        source: "chat",
+      });
+    } catch { /* non-fatal */ }
   }
 
   return NextResponse.json({ content, type });
