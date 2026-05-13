@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
     const record = await kvGet<PasswordRecord>(kvKey);
     if (!record) {
       return NextResponse.json(
-        { error: "No account found with this email. Please create an account." },
+        { error: "No account or no password set. If you subscribed, use the reset link below to set one up." },
         { status: 401 }
       );
     }

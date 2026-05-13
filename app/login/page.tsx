@@ -74,6 +74,11 @@ export default function LoginPage() {
           >
             {status === "loading" ? "Signing in…" : "Sign In"}
           </button>
+          <p className="text-center">
+            <a href="/forgot-password" className="text-xs text-zinc-500 hover:text-zinc-300 hover:underline">
+              Forgot or never set your password?
+            </a>
+          </p>
         </form>
 
         {/* Error */}
