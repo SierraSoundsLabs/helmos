@@ -4,6 +4,108 @@ Append-only journal — most recent at the top. Read at the start of each Claude
 
 ---
 
+## 2026-05-13 — Seven-task batch on `feat/password-reset`
+
+After password reset shipped to the branch, Rory queued 7 follow-up tasks
+that were added to the same PR rather than separate branches (his
+preference: "more updates before merging"). All commits sit on
+`feat/password-reset` awaiting review and merge.
+
+### Task 1 — Dashboard skips "Building career plan…" for returning users
+**File:** `app/api/analyze/route.ts`
+**Bug:** GET `/api/analyze?artistId=X` was reading `helm:analysis:{id}` but
+POST only ever wrote `helm:analysis:{id}:{releaseSlug}`. The dashboard's
+prefetch always 404'd, forcing every returning-user load into a full
+re-analyze cycle and the slow "Building career plan…" screen.
+**Fix:** POST now writes to both the versioned key (preserves cache-busting
+on new release) and the bare key (serves the prefetch).
+**Backfill:** Copied existing versioned-cache entries for 4 artists
+(including Rory's `4LyqJpHI1a45aZHIkVRBSQ`) into bare-key form so they
+hit the fast path on next login. Verified `GET helmos.co/api/analyze?artistId=…`
+now returns 200 in ~414ms.
+
+### Task 2 — "Create One-Sheet" becomes "Update One-Sheet" once published
+**File:** `app/dashboard/page.tsx` (OverviewTab Quick Actions)
+Already had `hasOneSheet` wired through. Made the first Quick Action
+conditional: when `hasOneSheet` is true, label becomes "📝 Update One-Sheet"
+and the click sends an open-ended chat prompt asking the user what
+specifically to update.
+
+### Task 3 — One-sheet social links + manager email
+**Files:** `app/api/helm/onesheet/publish/route.ts`, `app/dashboard/page.tsx`
+- Auto-derives Apple Music artist URL from Spotify via Odesli (song.link),
+  with iTunes Search fallback by artist name.
+- `bookingEmail` now uses `artistEmail(slug)` — the public-facing
+  `artistname@helmos.co` alias instead of leaking the user's real email.
+- Publish response now includes `managerEmail` and `missingSocials[]`.
+- Success modal surfaces the manager email + nudges the user toward the
+  Links tab to fill in any missing socials.
+- **Skipped:** auto-detect of Instagram/YouTube/TikTok — Spotify API
+  doesn't expose these and scraping the artist page is fragile. The
+  Links tab already lets users enter them manually.
+
+### Task 4 — Manager email forwarding (code only — infra still needed)
+**Files:** `app/api/helm/outreach/webhook/route.ts`,
+`app/api/helm/onesheet/publish/route.ts`
+- Publish writes a slug→email reverse mapping at `helm:slug_email:{slug}`.
+- Inbound webhook (after storing the email in KV) looks up the artist's
+  real email via the slug mapping and forwards via Resend:
+  - From: `Helm Manager <{slug}@helmos.co>`
+  - Reply-To: original sender (so easy reply works from artist's mail
+    client; their real address is visible to the sender on reply — proper
+    anonymizing roundtrip is a follow-up)
+  - Subject prefixed `[Helm]`
+  - In-Reply-To header preserved for threading
+  - Non-fatal: forwarding errors don't block the inbox store
+- **Infra setup still required (Rory, manual):**
+  1. Resend dashboard → Inbound → enable for helmos.co
+  2. DNS: add `MX 10 inbound.resend.com` on helmos.co
+  3. Resend → Webhooks → point inbound webhook at
+     `https://helmos.co/api/helm/outreach/webhook`
+  4. Set `RESEND_WEBHOOK_SECRET` in Vercel env vars
+
+### Task 5 — Outreach generator skips already-contacted people
+**File:** `app/api/helm/outreach/generate/route.ts`
+Two layers of defense:
+1. Prompt-level: lists the last 50 contacts already reached out to and
+   tells Claude to suggest different people.
+2. Post-filter: drops any drafts whose email or name+publication tuple
+   matches a past `OutreachRecord` in KV.
+Response now reports `droppedDuplicates` count.
+
+### Task 6 — Contact-type multi-select before generating outreach
+**Files:** `app/dashboard/page.tsx` (OutreachTab),
+`app/api/helm/outreach/generate/route.ts`
+Chip-row multi-select with 7 options (journalist, playlist curator,
+booking agent, A&R, show promoter, music supervisor, radio DJ). Generate
+buttons disabled until at least one is picked. Defaults match the
+prior hardcoded behavior so existing flows are unchanged.
+
+### Task 7 — "View Press Release" button on Works & Recordings
+**Files:** `app/api/helm/generate/route.ts`, `app/api/helm/press-release/route.ts`,
+`app/dashboard/page.tsx` (WorksTab)
+- Chat-driven press releases now persist to KV (previously only the
+  direct POST path saved, and only under email+timestamp keys).
+- Both paths now also save to `helm:artist:{id}:press-release:latest`.
+- New GET `/api/helm/press-release?artistId=X` returns the latest.
+- WorksTab fetches on mount; if a press release exists, the latest-release
+  card shows a "📰 View Press Release" chip that opens a DocModal with
+  the content.
+
+### Followups still owed
+- Privacy-preserving email roundtrip (artist's real email never exposed to
+  outside senders) — requires an inbox UI in Helm for replies.
+- Backfill `helm:slug_email:*` for users who published their one-sheet
+  before this change.
+- The 4 pre-existing TS `artistData possibly null` errors in
+  `app/dashboard/page.tsx` are still there. Unrelated.
+- `hashPassword` / `buildSessionAndRedirect` duplication noted in the
+  password-reset entry still pending extraction.
+- Pre-existing `middleware.ts:30` Node-`crypto`-in-Edge-runtime bug still
+  breaking local `npm run dev` on every page. Production unaffected.
+
+---
+
 ## 2026-05-12 — Password reset / first-time setup feature
 
 **Branch:** `feat/password-reset`
