@@ -5,6 +5,7 @@ import type { ArtistData } from "@/lib/spotify";
 import type { OneSheetData } from "@/lib/types";
 import { artistSlug } from "@/lib/types";
 import type { EPKData } from "@/app/api/helm/epk/route";
+import { artistEmail } from "@/lib/email";
 
 function stripMarkdown(text: string): string {
   return text
@@ -15,6 +16,48 @@ function stripMarkdown(text: string): string {
     .replace(/^[-–—]\s*/gm, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+// Try to derive an Apple Music artist URL from a Spotify artist URL.
+// 1. Odesli (song.link) — direct platform map, most reliable
+// 2. iTunes Search by artist name — fuzzy fallback
+async function deriveAppleMusicArtistUrl(
+  spotifyArtistUrl: string | undefined,
+  artistName: string
+): Promise<string | null> {
+  if (spotifyArtistUrl) {
+    try {
+      const encoded = encodeURIComponent(spotifyArtistUrl);
+      const res = await fetch(
+        `https://api.song.link/v1-alpha.1/links?url=${encoded}&userCountry=US`,
+        { signal: AbortSignal.timeout(6000) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const am = data.linksByPlatform?.appleMusic?.url;
+        if (am) return am as string;
+      }
+    } catch { /* fall through to iTunes */ }
+  }
+  if (artistName) {
+    try {
+      const q = encodeURIComponent(artistName);
+      const res = await fetch(
+        `https://itunes.apple.com/search?term=${q}&entity=musicArtist&limit=5`,
+        { signal: AbortSignal.timeout(5000) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const target = artistName.toLowerCase().trim();
+        const match = (data.results || []).find(
+          (r: Record<string, string>) =>
+            (r.artistName || "").toLowerCase().trim() === target
+        );
+        if (match?.artistLinkUrl) return match.artistLinkUrl as string;
+      }
+    } catch { /* non-fatal */ }
+  }
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -41,6 +84,16 @@ export async function POST(req: NextRequest) {
   const epk = await kvGet<EPKData>(`helm:user:${session.email}:epk`);
   const pressQuotes = epk?.pressQuotes?.filter(q => q && !q.startsWith("[")) ?? [];
 
+  // Auto-derive Apple Music if user hasn't supplied one
+  let appleMusic = epk?.socialLinks?.appleMusic;
+  if (!appleMusic) {
+    const derived = await deriveAppleMusicArtistUrl(
+      artistData.spotifyUrl,
+      artistData.name
+    );
+    if (derived) appleMusic = derived;
+  }
+
   const data: OneSheetData = {
     artistId: artistData.id,
     artistName: artistData.name,
@@ -66,10 +119,12 @@ export async function POST(req: NextRequest) {
     socialLinks: {
       spotify: artistData.spotifyUrl || undefined,
       ...(epk?.socialLinks ?? {}),
-      appleMusic: epk?.socialLinks?.appleMusic || undefined,
+      appleMusic,
     },
     pressQuotes,
-    bookingEmail: epk ? session.email : undefined,
+    // Manager email is the public-facing artistname@helmos.co alias.
+    // (Task 4 will forward replies to the artist's real email.)
+    bookingEmail: artistEmail(slug),
     createdAt: new Date().toISOString(),
   };
 
@@ -77,9 +132,19 @@ export async function POST(req: NextRequest) {
   // Also save to the artist-keyed path for the new API route
   await kvSet(`helm:artist:${artistData.id}:one-sheet-data`, data);
 
+  // Report which user-supplied socials are still missing so the
+  // frontend can prompt the artist to add them via the Links tab.
+  const missingSocials: string[] = [];
+  if (!data.socialLinks.instagram) missingSocials.push("instagram");
+  if (!data.socialLinks.youtube) missingSocials.push("youtube");
+  if (!data.socialLinks.tiktok) missingSocials.push("tiktok");
+  if (!data.socialLinks.appleMusic) missingSocials.push("appleMusic");
+
   return NextResponse.json({
     url: `https://helmos.co/one-sheet/${slug}`,
     legacyUrl: `https://helmos.co/${slug}`,
     slug,
+    managerEmail: data.bookingEmail,
+    missingSocials,
   });
 }

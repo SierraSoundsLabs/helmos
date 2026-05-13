@@ -3445,8 +3445,17 @@ function DashboardContent() {
         const data = await res.json();
         if (data.url) {
           window.open(data.url, "_blank");
+          const missing: string[] = Array.isArray(data.missingSocials) ? data.missingSocials : [];
+          const missingLabel = (k: string) =>
+            ({ instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", appleMusic: "Apple Music" } as Record<string, string>)[k] ?? k;
+          const missingLine = missing.length
+            ? `\n\n⚠️ Missing social links: ${missing.map(missingLabel).join(", ")}.\nOpen the 🔗 Links tab to add them — they'll appear on your one-sheet automatically.`
+            : "";
+          const managerLine = data.managerEmail
+            ? `\n\nYour manager email (on the one-sheet): ${data.managerEmail}`
+            : "";
           setDocModal({
-            content: `Your one-sheet is ready!\n\n🔗 ${data.url}\n\nShare this link with labels, booking agents, and press. It includes your photo, stats, top tracks, and bio.\n\nTip: Use the Print / Download PDF button on the page to save a PDF.`,
+            content: `Your one-sheet is ready!\n\n🔗 ${data.url}\n\nShare this link with labels, booking agents, and press. It includes your photo, stats, top tracks, and bio.${managerLine}${missingLine}\n\nTip: Use the Print / Download PDF button on the page to save a PDF.`,
             title: "One-Sheet Ready ✓",
           });
         }
