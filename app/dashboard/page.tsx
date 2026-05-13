@@ -2278,6 +2278,16 @@ function LinksTab({
 
 
 // ─── OUTREACH TAB ─────────────────────────────────────────────────────────────
+const CONTACT_TYPE_OPTIONS: { id: string; label: string }[] = [
+  { id: "journalist",       label: "Journalists / Editors" },
+  { id: "playlist_curator", label: "Playlist Curators" },
+  { id: "booking_agent",    label: "Booking Agents" },
+  { id: "ar",               label: "A&R" },
+  { id: "promoter",         label: "Local Show Promoters" },
+  { id: "music_supervisor", label: "Music Supervisors (Sync)" },
+  { id: "radio_dj",         label: "Radio DJs / Program Directors" },
+];
+
 function OutreachTab({ artist, isPaid, onSubscribe }: {
   artist: ArtistData;
   isPaid: boolean;
@@ -2289,6 +2299,9 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
+  const [contactTypes, setContactTypes] = useState<Set<string>>(
+    new Set(["journalist", "playlist_curator", "booking_agent"])
+  );
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number } | null>(null);
@@ -2321,6 +2334,7 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
 
   const handleGenerate = async (count: number) => {
     if (!isPaid) { onSubscribe(); return; }
+    if (contactTypes.size === 0) return; // button is disabled in this state
     setGenerating(true);
     setDrafts([]);
     setSendResult(null);
@@ -2328,7 +2342,11 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
       const res = await fetch("/api/helm/outreach/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artistData: artist, count }),
+        body: JSON.stringify({
+          artistData: artist,
+          count,
+          contactTypes: Array.from(contactTypes),
+        }),
       });
       const data = await res.json();
       if (data.drafts) {
@@ -2340,6 +2358,15 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
     } finally {
       setGenerating(false);
     }
+  };
+
+  const toggleContactType = (id: string) => {
+    setContactTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const toggleSelect = (i: number) => {
@@ -2467,15 +2494,39 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
       <div className="flex flex-col gap-4">
         <div>
           <h2 className="text-sm font-semibold text-white mb-1">Generate Outreach</h2>
-          <p className="text-xs text-zinc-500">Helm will research and draft up to 10 personalized emails per day targeting journalists, playlist curators, and booking agents in your genre.</p>
+          <p className="text-xs text-zinc-500">Pick who Helm should reach out to, then pick how many emails to draft. Up to 10 per day.</p>
         </div>
+
+        {/* Contact-type multi-select */}
+        <div>
+          <p className="text-xs text-zinc-400 mb-2">What types of contacts do you want to reach?</p>
+          <div className="flex gap-1.5 flex-wrap">
+            {CONTACT_TYPE_OPTIONS.map(opt => {
+              const active = contactTypes.has(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => toggleContactType(opt.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? "bg-[#6366f1] border-[#6366f1] text-white" : "bg-[#111] border-[#1e1e1e] text-zinc-400 hover:border-[#2e2e2e]"}`}
+                >
+                  {active ? "✓ " : ""}{opt.label}
+                </button>
+              );
+            })}
+          </div>
+          {contactTypes.size === 0 && (
+            <p className="text-xs text-red-400 mt-2">Pick at least one contact type to generate.</p>
+          )}
+        </div>
+
         <div className="flex gap-2 flex-wrap">
           {[3, 5, 10].map(n => (
             <button
               key={n}
               onClick={() => handleGenerate(n)}
-              disabled={generating}
-              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+              disabled={generating || contactTypes.size === 0}
+              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {generating ? "Researching…" : `Generate ${n} Emails →`}
             </button>

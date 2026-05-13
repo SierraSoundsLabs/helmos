@@ -26,7 +26,11 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { artistData, count = 5 }: { artistData: ArtistData; count?: number } = await req.json();
+  const { artistData, count = 5, contactTypes }: {
+    artistData: ArtistData;
+    count?: number;
+    contactTypes?: string[];
+  } = await req.json();
   if (!artistData) {
     return new Response(JSON.stringify({ error: "artistData required" }), {
       status: 400, headers: { "Content-Type": "application/json" },
@@ -34,6 +38,24 @@ export async function POST(req: NextRequest) {
   }
 
   const safeCount = Math.min(Math.max(1, count), 10);
+
+  // Map UI contact-type ids to human-readable target descriptions for the prompt.
+  // Defaults to the original three if the caller didn't supply any.
+  const CONTACT_TYPE_LABELS: Record<string, string> = {
+    journalist:        "Music journalists / editors at blogs and publications covering this genre",
+    playlist_curator:  "Independent playlist curators on Spotify",
+    booking_agent:     "Booking agents who work with artists at this level",
+    ar:                "A&R reps at labels (independent and major) signing artists in this genre",
+    promoter:          "Local and regional show promoters who book this genre in venues 200-1000 cap",
+    music_supervisor:  "Music supervisors for sync licensing (film, TV, commercials, games)",
+    radio_dj:          "Radio DJs and program directors at college or independent stations",
+  };
+  const selectedTypes = (contactTypes && contactTypes.length > 0)
+    ? contactTypes.filter(t => CONTACT_TYPE_LABELS[t])
+    : ["journalist", "playlist_curator", "booking_agent"];
+  const targetDescriptions = selectedTypes
+    .map(t => `- ${CONTACT_TYPE_LABELS[t]}`)
+    .join("\n");
   const slug = toSlug(artistData.name);
   const fromEmail = artistEmail(slug);
 
@@ -87,12 +109,8 @@ ARTIST PROFILE:
 ${releaseList || "  No releases"}
 - Last Released: ${artistData.monthsAgoLastRelease != null ? `${artistData.monthsAgoLastRelease} months ago` : "Unknown"}${bioSection}
 
-TARGETS to identify (mix of these roles based on the artist's genre and stage):
-- Music journalists / editors at blogs and publications covering this genre
-- Independent playlist curators on Spotify
-- Booking agents who work with artists at this level
-- Music supervisors for sync licensing
-- Radio DJs / program directors at college or independent stations
+TARGETS to identify — ONLY pick people who fit these categories the artist asked for:
+${targetDescriptions}
 
 For each target, write a short, personalized outreach email FROM ${fromEmail}. The email should:
 - Reference specific, real work the target has done (mention their real publication, playlist name, or booking history if applicable)
@@ -105,7 +123,7 @@ Return a JSON array with exactly ${safeCount} objects. Each object must have the
 {
   "to": "real-or-realistic-email@publication.com",
   "toName": "Full Name",
-  "toRole": "Journalist" | "Playlist Curator" | "Booking Agent" | "Music Supervisor" | "Radio DJ",
+  "toRole": "Journalist" | "Playlist Curator" | "Booking Agent" | "A&R" | "Show Promoter" | "Music Supervisor" | "Radio DJ",
   "toPublication": "Publication/Playlist/Agency Name",
   "subject": "Email subject line",
   "body": "Full email body text (plain text, no HTML)",
