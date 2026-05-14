@@ -4,6 +4,68 @@ Append-only journal — most recent at the top. Read at the start of each Claude
 
 ---
 
+## 2026-05-14 — Chat UI fixes + real OneSheet updates
+
+Rory reported (with screen recording):
+1. Chat input jumping off-screen while typing.
+2. Layout too sidebar-heavy.
+3. "Update my one-sheet" via chat — bot confirms, nothing changes.
+
+**1. Chat UI (`fix(chat-ui)`).**
+   - Removed the dual-state height (640px → 780px) and the matching grid
+     width change. Both transitions firing together while typing was
+     pushing the input below the viewport fold.
+   - Chat is now `h-[min(720px,calc(100dvh-7rem))]` — viewport-bound,
+     constant regardless of waiting state.
+   - Chat panel is `lg:sticky top-4` so it stays visible as the dashboard
+     scrolls.
+   - Grid changed `1fr_560px` → `minmax(0,2fr) minmax(420px,3fr)` for a
+     ~40/60 split that respects min/max constraints.
+
+**2. Bio update path (`fix(chat)`).**
+   Root cause of the "update doesn't stick" complaint:
+   - No `<save-bio>` tag — Claude could not actually save a bio edit.
+   - `<generate type="bio" />` triggers the 5-question interview, not an
+     in-place edit. Wrong action for "add my new collab."
+   - The one-sheet publish route reads bio from the REQUEST BODY, not
+     from KV, so even an out-of-band bio update wouldn't reach the
+     regenerated one-sheet without the dashboard re-fetching first.
+
+   Fix:
+   - `buildSystemPrompt` accepts `currentBio` and embeds the saved
+     short/medium/long verbatim so Claude can do intelligent in-place
+     updates (preserve unchanged copy, edit only what was asked).
+   - New UPDATING THE BIO IN PLACE rule in the prompt: don't
+     re-interview, edit, fire `<save-bio>` + `<generate
+     type="one-sheet" />` in the same response.
+   - New ONE-SHEET DATA SOURCES section: tells Claude what's editable
+     via chat (bio, shows) vs. elsewhere (social links → Links tab,
+     press quotes → EPK) vs. immutable from Spotify (tracks, releases,
+     listener counts). Stops the "I'll add that song" lying pattern.
+   - Dashboard caches `savedBioContent` and passes it as `currentBio`
+     in the chat payload.
+   - Chat handler detects `<save-bio>`, POSTs to `/api/helm/bio`
+     (already supported partial updates), refreshes local state, then
+     the existing `<generate type="one-sheet" />` path picks up the
+     new bio from KV via `handleGenerateDoc("one-sheet")`.
+
+   End-to-end verified flow:
+   ```
+   user: "update my bio to mention my collab with X"
+   claude: reads current bio from system prompt
+         → <save-bio short="…with X…" medium="…" long="…" />
+         → <generate type="one-sheet" />
+   handler: POSTs to /api/helm/bio (saves to KV)
+   handler: handleGenerateDoc fetches saved bio, calls publish
+   publish: writes new onesheet:{slug}
+   result: helmos.co/{slug} reflects the edit immediately
+   ```
+
+   Tracks/releases/listeners remain Spotify-derived and unchangeable —
+   the prompt makes Claude honest about this.
+
+---
+
 ## 2026-05-14 — Followup batch 2: cleanup + Helm-hosted inbox
 
 Rory's decisions: backfill go-ahead, delete duplicate, rip magic link,
