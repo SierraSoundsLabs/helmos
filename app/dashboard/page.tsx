@@ -3455,54 +3455,7 @@ function DashboardContent() {
       { role: "user", content: "Run a royalty audit" },
       { role: "assistant", content: openingMsg },
     ]);
-    return;
-
-    // eslint-disable-next-line no-unreachable
-    void isChatStreaming;
-
-    const trackNames = [
-      ...artistData.allReleases.slice(0, 10).map(r => r.name),
-      ...artistData.topTracks.slice(0, 10).map(t => t.name),
-    ].filter((name, i, arr) => arr.indexOf(name) === i).slice(0, 10);
-
-    try {
-      const res = await fetch("/api/helm/royalty-audit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          artistName: artistData.name,
-          tracks: trackNames,
-          monthlyListeners: artistData.monthlyListeners,
-        }),
-      });
-
-      if (!res.ok) {
-        setChatMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: "Sorry, the royalty audit failed. Please try again." };
-          return updated;
-        });
-        return;
-      }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let content = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        content += decoder.decode(value, { stream: true });
-        setChatMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content };
-          return updated;
-        });
-      }
-    } finally {
-      setIsChatStreaming(false);
-    }
-  }, [artistData, isChatStreaming]);
+  }, [artistData, isPaid, handleSubscribe, focusChat, setChatMessages]);
 
   // Document generation handler
   const handleGenerateDoc = useCallback(async (type: DocType) => {
