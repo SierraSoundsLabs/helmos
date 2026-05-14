@@ -3369,6 +3369,10 @@ function DashboardContent() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [savedBioAt, setSavedBioAt] = useState<string | null>(null);
   const [hasSavedBio, setHasSavedBio] = useState(false);
+  // Current saved bio content. Passed into chat so Claude can do
+  // intelligent in-place updates (e.g. "add my new collab" rather than
+  // rewriting from scratch) and stays in sync with /api/helm/bio.
+  const [savedBioContent, setSavedBioContent] = useState<{ short?: string; medium?: string; long?: string }>({});
   const [hasOneSheet, setHasOneSheet] = useState(false);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [isChatWaitingForUser, setIsChatWaitingForUser] = useState(false);
@@ -3397,12 +3401,17 @@ function DashboardContent() {
       .catch(() => {});
   }, []);
 
-  // Check if artist has a saved bio
+  // Check if artist has a saved bio + cache content for chat
   useEffect(() => {
     if (!artistId) return;
     fetch(`/api/helm/bio?artistId=${artistId}`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.bio) setHasSavedBio(true); })
+      .then(d => {
+        if (d?.bio) {
+          setHasSavedBio(true);
+          setSavedBioContent({ short: d.bio.short, medium: d.bio.medium, long: d.bio.long });
+        }
+      })
       .catch(() => {});
   }, [artistId, savedBioAt]);
 
@@ -3487,6 +3496,10 @@ function DashboardContent() {
           messages: newMessages,
           artistContext: artistData,
           hasBio: hasSavedBio,
+          // Current saved bio content + future-relevant snapshots so the
+          // assistant can do intelligent in-place updates instead of
+          // rewriting from scratch or pretending it did.
+          currentBio: hasSavedBio ? savedBioContent : undefined,
         }),
       });
 
@@ -3517,6 +3530,7 @@ function DashboardContent() {
         .replace(/<send-email[^/]*\/>/g, "")
         .replace(/<book-shows[^/]*\/>/g, "")
         .replace(/<save-show[^/]*\/>/g, "")
+        .replace(/<save-bio[\s\S]*?\/>/g, "")
         .trim();
       if (cleanContent !== assistantContent.trim()) {
         setChatMessages(prev => {
@@ -3559,6 +3573,60 @@ function DashboardContent() {
             setChatMessages(prev => [
               ...prev,
               { role: "assistant", content: `⚠️ I couldn't save that show. Try again, or add it from the dashboard.` },
+            ]);
+          }
+        }
+      }
+
+      // Handle save-bio tag (must run before <generate> so the bio is in KV
+      // when the publish route reads it). Attribute values can be long, may
+      // contain quotes/newlines — use [\s\S] greedy match up to next '" '.
+      const saveBioMatch = assistantContent.match(/<save-bio\s+([\s\S]*?)\/>/i);
+      if (saveBioMatch && artistData) {
+        const attrs = saveBioMatch[1];
+        // Attributes can span multiple lines. Capture each by name with a
+        // non-greedy match that ends before the next attribute name.
+        const attrLong = (name: string): string | undefined => {
+          const re = new RegExp(`${name}\\s*=\\s*"([\\s\\S]*?)"(?=\\s+(?:short|medium|long|\\s*\\/?>))`, "i");
+          const m = attrs.match(re);
+          if (m) return m[1].trim();
+          // Last attribute (no terminator after closing quote) fallback
+          const re2 = new RegExp(`${name}\\s*=\\s*"([\\s\\S]*?)"\\s*$`, "i");
+          const m2 = attrs.match(re2);
+          return m2 ? m2[1].trim() : undefined;
+        };
+        const short = attrLong("short");
+        const medium = attrLong("medium");
+        const long = attrLong("long");
+        if (short || medium || long) {
+          try {
+            await fetch("/api/helm/bio", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                artistId: artistData.id,
+                artistName: artistData.name,
+                short,
+                medium,
+                long,
+                generatedFrom: "interview",
+              }),
+            });
+            // Refresh local bio state so subsequent chat turns see the new
+            // saved bio (don't wait for the useEffect to re-fetch).
+            setSavedBioContent({
+              short: short ?? savedBioContent.short,
+              medium: medium ?? savedBioContent.medium,
+              long: long ?? savedBioContent.long,
+            });
+            setHasSavedBio(true);
+            setSavedBioAt(new Date().toISOString());
+          } catch (err) {
+            console.error("save-bio failed", err);
+            setChatMessages(prev => [
+              ...prev,
+              { role: "assistant", content: `⚠️ I couldn't save the updated bio. Try again, or edit it directly in the Links tab.` },
             ]);
           }
         }
