@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
   await saveUserProfile(profile);
 
-  // Store email→artistId mapping so magic link verify can find it on re-login
+  // Store email→artistId mapping so future logins can resolve the artist
   const userEmail = email || session.email;
   if (userEmail) {
     await kvSet(`helm:email_artist:${userEmail.toLowerCase()}`, artistId, 60 * 60 * 24 * 365);

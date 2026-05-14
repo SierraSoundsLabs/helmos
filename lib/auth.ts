@@ -1,6 +1,5 @@
 // Shared session-issuing helper used by all auth routes that need to
-// log a user in: password register/login, password reset confirm,
-// magic-link verify, etc.
+// log a user in: password register/login, password reset confirm, etc.
 //
 // Sets the session cookie and returns a redirect target appropriate
 // for the user's state.

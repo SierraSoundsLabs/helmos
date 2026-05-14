@@ -18,13 +18,7 @@ function HomeContent() {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
 
-  // Magic link login state
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginState, setLoginState] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [loginError, setLoginError] = useState("");
-
   // Password login state
-  const [loginTab, setLoginTab] = useState<"magic" | "password">("magic");
   const [pwEmail, setPwEmail] = useState("");
   const [pwPassword, setPwPassword] = useState("");
   const [pwShowPass, setPwShowPass] = useState(false);
@@ -33,9 +27,8 @@ function HomeContent() {
 
   useEffect(() => {
     const err = searchParams.get("error");
-    if (err === "expired") setLoginError("Your login link has expired. Please request a new one.");
-    else if (err === "invalid") setLoginError("Invalid login link. Please request a new one.");
-    else if (err === "server") setLoginError("Something went wrong. Please try again.");
+    if (err === "expired") setPwError("Your session expired. Please sign in again.");
+    else if (err === "server") setPwError("Something went wrong. Please try again.");
   }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -65,37 +58,6 @@ function HomeContent() {
       clearInterval(interval);
       router.push(`/dashboard?artist=${artistId}`);
     }, 1500);
-  }
-
-  async function handleMagicLink(e: React.FormEvent) {
-    e.preventDefault();
-    setLoginError("");
-    const email = loginEmail.trim().toLowerCase();
-    if (!email || !email.includes("@")) {
-      setLoginError("Please enter a valid email address.");
-      return;
-    }
-
-    setLoginState("sending");
-
-    try {
-      const res = await fetch("/api/auth/magic/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-
-      if (!res.ok) {
-        setLoginState("error");
-        setLoginError("Something went wrong. Please try again.");
-        return;
-      }
-
-      setLoginState("sent");
-    } catch {
-      setLoginState("error");
-      setLoginError("Something went wrong. Please try again.");
-    }
   }
 
   async function handlePasswordAuth(e: React.FormEvent) {
@@ -230,71 +192,7 @@ function HomeContent() {
           <div className="w-full border-t border-[#1e1e1e] pt-6 flex flex-col gap-4">
             <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">Already a member?</p>
 
-            {/* Tab switcher */}
-            <div className="flex gap-1 p-1 bg-[#111] border border-[#2e2e2e] rounded-xl self-start">
-              {(["magic", "password"] as const).map(tab => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setLoginTab(tab)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    loginTab === tab
-                      ? "bg-[#1e1e1e] text-white shadow"
-                      : "text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  {tab === "magic" ? "Magic Link" : "Password"}
-                </button>
-              ))}
-            </div>
-
-            {/* Magic Link tab */}
-            {loginTab === "magic" && (
-              loginState === "sent" ? (
-                <div className="flex flex-col items-center gap-3 py-4">
-                  <div className="w-10 h-10 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 flex items-center justify-center">
-                    <span className="text-lg">📬</span>
-                  </div>
-                  <p className="text-sm text-white font-medium">Check your inbox</p>
-                  <p className="text-xs text-zinc-500 text-center">
-                    We sent a login link to <span className="text-zinc-300">{loginEmail}</span>.
-                    <br />It expires in 15 minutes.
-                  </p>
-                  <button
-                    onClick={() => { setLoginState("idle"); setLoginEmail(""); }}
-                    className="text-xs text-[#6366f1] hover:underline mt-1"
-                  >
-                    Use a different email
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleMagicLink} className="w-full flex flex-col gap-3">
-                  <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
-                    <MailIcon />
-                    <input
-                      type="email"
-                      value={loginEmail}
-                      onChange={e => setLoginEmail(e.target.value)}
-                      placeholder="your@email.com"
-                      className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
-                      autoComplete="email"
-                    />
-                  </div>
-                  {loginError && <p className="text-xs text-red-400 text-center">{loginError}</p>}
-                  <button
-                    type="submit"
-                    disabled={loginState === "sending"}
-                    className="w-full py-3 rounded-xl text-sm font-semibold text-white border border-[#2e2e2e] bg-[#111] hover:bg-[#1a1a1a] hover:border-[#6366f1]/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                  >
-                    {loginState === "sending" ? "Sending…" : "Email me a login link →"}
-                  </button>
-                </form>
-              )
-            )}
-
-            {/* Password tab */}
-            {loginTab === "password" && (
-              <form onSubmit={handlePasswordAuth} className="w-full flex flex-col gap-3">
+            <form onSubmit={handlePasswordAuth} className="w-full flex flex-col gap-3">
                 <div className="relative flex items-center gap-2 bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-3 focus-within:border-[#6366f1]/60 transition-colors">
                   <MailIcon />
                   <input
@@ -339,7 +237,6 @@ function HomeContent() {
                   </a>
                 </p>
               </form>
-            )}
           </div>
 
         </div>
