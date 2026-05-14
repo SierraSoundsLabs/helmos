@@ -197,6 +197,45 @@ export default async function OneSheetPage({ params }: Props) {
           </Section>
         )}
 
+        {/* ── Upcoming Shows ───────────────────────────────────────────── */}
+        {data.upcomingShows && data.upcomingShows.length > 0 && (
+          <Section title="Upcoming Shows">
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {data.upcomingShows.map((show) => {
+                const dateLabel = formatShowDate(show.date);
+                return (
+                  <div key={show.id} style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: "16px",
+                    borderBottom: "1px solid #eee",
+                    paddingBottom: "8px",
+                  }}>
+                    <div style={{ minWidth: "90px", fontSize: "12px", fontWeight: 700, color: "#222" }}>
+                      {dateLabel}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#222" }}>
+                        {show.venue}{show.city ? ` · ${show.city}` : ""}
+                      </div>
+                      {show.lineup && (
+                        <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>
+                          {show.lineup}
+                        </div>
+                      )}
+                    </div>
+                    {show.ticketUrl && (
+                      <a href={show.ticketUrl} style={{ fontSize: "12px", color: "#8b5cf6", fontWeight: 600 }}>
+                        Tickets →
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+
         {/* ── Press Highlights ─────────────────────────────────────────── */}
         {hasPressQuotes && (
           <Section title="Press Highlights">
@@ -359,4 +398,14 @@ function extractHandle(url: string): string {
   // Fall back to last path segment
   const parts = url.replace(/\/$/, "").split("/");
   return parts[parts.length - 1] ?? url;
+}
+
+function formatShowDate(iso: string): string {
+  // Render YYYY-MM-DD as "May 23, 2026"
+  const parts = iso.split("-");
+  if (parts.length !== 3) return iso;
+  const [y, m, d] = parts.map(Number);
+  if (!y || !m || !d) return iso;
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[m - 1]} ${d}, ${y}`;
 }

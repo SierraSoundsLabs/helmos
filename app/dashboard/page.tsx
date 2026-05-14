@@ -3273,6 +3273,7 @@ function DashboardContent() {
         .replace(/<generate[^/]*\/>/g, "")
         .replace(/<send-email[^/]*\/>/g, "")
         .replace(/<book-shows[^/]*\/>/g, "")
+        .replace(/<save-show[^/]*\/>/g, "")
         .trim();
       if (cleanContent !== assistantContent.trim()) {
         setChatMessages(prev => {
@@ -3280,6 +3281,44 @@ function DashboardContent() {
           updated[updated.length - 1] = { role: "assistant", content: cleanContent };
           return updated;
         });
+      }
+
+      // Handle save-show tag (must run before <generate> so the show is in KV
+      // when the publish route reads it).
+      const saveShowMatch = assistantContent.match(
+        /<save-show\s+([^/]*?)\/>/i
+      );
+      if (saveShowMatch && artistData) {
+        const attrs = saveShowMatch[1];
+        const attr = (name: string) => {
+          const m = attrs.match(new RegExp(`${name}="([^"]*)"`, "i"));
+          return m ? m[1] : undefined;
+        };
+        const date = attr("date");
+        const venue = attr("venue");
+        if (date && venue) {
+          try {
+            await fetch("/api/helm/onesheet/shows", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                artistId: artistData.id,
+                date,
+                venue,
+                city: attr("city"),
+                lineup: attr("lineup"),
+                ticketUrl: attr("ticketUrl") ?? attr("ticketurl"),
+              }),
+            });
+          } catch (err) {
+            console.error("save-show failed", err);
+            setChatMessages(prev => [
+              ...prev,
+              { role: "assistant", content: `⚠️ I couldn't save that show. Try again, or add it from the dashboard.` },
+            ]);
+          }
+        }
       }
 
       // Handle send-email tag

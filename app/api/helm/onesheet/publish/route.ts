@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { kvGet, kvSet } from "@/lib/kv";
 import type { ArtistData } from "@/lib/spotify";
-import type { OneSheetData } from "@/lib/types";
+import type { OneSheetData, UpcomingShow } from "@/lib/types";
 import { artistSlug } from "@/lib/types";
 import type { EPKData } from "@/app/api/helm/epk/route";
 import { artistEmail } from "@/lib/email";
@@ -94,6 +94,14 @@ export async function POST(req: NextRequest) {
     if (derived) appleMusic = derived;
   }
 
+  // Pull upcoming shows (filter past dates, sort ascending)
+  const allShows =
+    (await kvGet<UpcomingShow[]>(`helm:artist:${artistData.id}:upcoming-shows`)) ?? [];
+  const today = new Date().toISOString().slice(0, 10);
+  const upcomingShows = allShows
+    .filter((s) => s.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   const data: OneSheetData = {
     artistId: artistData.id,
     artistName: artistData.name,
@@ -125,6 +133,7 @@ export async function POST(req: NextRequest) {
     // Manager email is the public-facing artistname@helmos.co alias.
     // (Task 4 will forward replies to the artist's real email.)
     bookingEmail: artistEmail(slug),
+    upcomingShows: upcomingShows.length ? upcomingShows : undefined,
     createdAt: new Date().toISOString(),
   };
 
