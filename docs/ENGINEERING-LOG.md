@@ -4,6 +4,67 @@ Append-only journal — most recent at the top. Read at the start of each Claude
 
 ---
 
+## 2026-05-14 — Followup batch: tech debt + shows UI
+
+Rory said "fix all this" to the followups I listed. Shipped five
+commits to `feat/password-reset`:
+
+**1. `fix(middleware)` — unblocks local `npm run dev`.** Previous
+middleware used Node `crypto.createHmac()` inside an Edge runtime,
+returning 500 on every dev page. The dev-auto-login was also using
+fake credentials (`dev-artist`/`cus_dev`) that couldn't load real
+data — the "convenience" was illusory. Replaced with a no-op +
+comment explaining what was there and why we removed it.
+
+**2. `fix(dashboard)` — removed ~45 lines of unreachable dead code**
+in `handleRoyaltyAudit` that had an early return followed by the
+prior streaming implementation. Fixed the 4 pre-existing
+`artistData possibly null` TS errors as a side effect. useCallback
+deps array now matches actual usage (exhaustive-deps satisfied).
+
+**3. `refactor(auth)` — DRY'd up the auth duplication.**
+   - NEW `lib/password.ts`: `hexEncode`, `hashPassword`,
+     `makeNewPasswordRecord`, `verifyPassword` + `PasswordRecord` type.
+   - NEW `lib/auth.ts`: `buildSessionAndRedirect` shared by every
+     auth route that issues a session.
+   - `app/api/auth/password/route.ts` and
+     `app/api/auth/reset-password/confirm/route.ts` now import from
+     lib instead of redefining locally.
+   - ~110 fewer lines net. Magic-verify route still has its own
+     inline copy — left untouched per surgical-changes principle.
+
+**4. `fix(chat)` — unified TAG-OR-IT-DIDN'T-HAPPEN rule across all
+action tags.** Yesterday's GENERATE RULE only covered `<generate>`,
+and the prior EMAIL SENDING RULE only covered `<send-email>`.
+`<save-show>` and `<book-shows>` were vulnerable to the same lying
+pattern. Replaced both per-tag rules with a single UNIVERSAL RULE
+plus per-tag specifics. Less prompt real estate, clearer policy.
+
+**5. `feat(dashboard)` — UI to manage saved shows.** New
+`UpcomingShowsCard` component in the Links tab. Lists, adds, deletes
+shows via the same `/api/helm/onesheet/shows` endpoint the chat uses.
+Artists can now manage shows without going through chat.
+
+### Still owed (needs Rory's input or action — not blocked by me)
+
+- **Backfill `helm:slug_email:*`** for users who published their
+  one-sheet before Task 4 shipped. Additive KV writes to production.
+  Awaiting blanket approval for this category of additive
+  maintenance writes (currently asks per-action).
+- **Nested `~/helmos/helmos/` clone removal** — 17MB local-only
+  duplicate. Destructive, asking before running.
+- **Magic Link UI mismatch** — HELM_CONTEXT.md says "no magic links
+  (removed)" but the homepage tab still shows it and the routes still
+  work. Product decision: keep + update the doc, or rip out?
+- **Identity cleanup** (three GitHub identities: `roryfelton`,
+  `hitpiece`, `polytester`) — requires Rory's GitHub org and Vercel
+  team admin access.
+- **Privacy-preserving email roundtrip** (Task 4 followup) — needs
+  product/UX decision on whether to build a Helm-hosted inbox or
+  accept that reply-to leaks the artist's real email.
+
+---
+
 ## 2026-05-14 — Chat honesty fix + upcoming-shows feature
 
 Rory tested Task 2's "Update One-Sheet" flow on the preview by asking
