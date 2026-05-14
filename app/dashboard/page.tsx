@@ -838,11 +838,14 @@ function HelmChat({
     onSend(text);
   };
 
+  // Chat is sized to the viewport so the input never jumps off-screen,
+  // and stuck to the top of its column so it stays visible while the user
+  // scrolls the rest of the dashboard.
   return (
-    <div className={`bg-[#111] border rounded-xl flex flex-col transition-all duration-300 ${
+    <div className={`bg-[#111] border rounded-xl flex flex-col lg:sticky lg:top-4 h-[min(720px,calc(100dvh-7rem))] transition-[border-color,box-shadow] duration-300 ${
       isWaitingForUser
-        ? "border-amber-500/40 h-[780px] shadow-lg shadow-amber-500/5"
-        : "border-[#1e1e1e] h-[640px]"
+        ? "border-amber-500/40 shadow-lg shadow-amber-500/5"
+        : "border-[#1e1e1e]"
     }`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#1e1e1e] shrink-0">
@@ -987,11 +990,7 @@ function OverviewTab({
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
 
   return (
-    <div className={`grid grid-cols-1 gap-6 transition-all duration-300 ${
-      isChatWaitingForUser
-        ? "lg:grid-cols-[1fr_720px]"
-        : "lg:grid-cols-[1fr_560px]"
-    }`}>
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(420px,3fr)]">
       {/* Main content */}
       <div className="flex flex-col gap-6">
         {/* Tasks — real queue only */}
