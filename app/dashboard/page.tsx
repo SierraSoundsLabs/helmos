@@ -2089,6 +2089,9 @@ function LinksTab({
         >{savingSocial ? "Saving…" : "Save Social Links"}</button>
       </div>
 
+      {/* Upcoming Shows card */}
+      <UpcomingShowsCard artistId={artist.id} />
+
       {/* Song Smart Links card */}
       <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
@@ -2314,6 +2317,206 @@ const CONTACT_TYPE_OPTIONS: { id: string; label: string }[] = [
   { id: "music_supervisor", label: "Music Supervisors (Sync)" },
   { id: "radio_dj",         label: "Radio DJs / Program Directors" },
 ];
+
+// ── UpcomingShowsCard ────────────────────────────────────────────────────────
+// Self-contained card for the LinksTab. Lists upcoming shows for the artist,
+// lets them add a new one (date + venue required; city/lineup/tickets optional)
+// or remove an existing one. Same API the chat uses via <save-show>.
+interface ShowItem {
+  id: string;
+  date: string;
+  venue: string;
+  city?: string;
+  lineup?: string;
+  ticketUrl?: string;
+  addedAt: string;
+}
+
+function UpcomingShowsCard({ artistId }: { artistId: string }) {
+  const [shows, setShows] = useState<ShowItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState({ date: "", venue: "", city: "", lineup: "", ticketUrl: "" });
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/helm/onesheet/shows?artistId=${encodeURIComponent(artistId)}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setShows(data.shows || []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [artistId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submit = async () => {
+    setError(null);
+    if (!form.date) { setError("Date required (YYYY-MM-DD)"); return; }
+    if (!form.venue.trim()) { setError("Venue required"); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) { setError("Date must be YYYY-MM-DD"); return; }
+    setAdding(true);
+    try {
+      const res = await fetch("/api/helm/onesheet/shows", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artistId,
+          date: form.date,
+          venue: form.venue.trim(),
+          city: form.city.trim() || undefined,
+          lineup: form.lineup.trim() || undefined,
+          ticketUrl: form.ticketUrl.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setError(j.error || "Failed to save show");
+        return;
+      }
+      const data = await res.json();
+      setShows(data.shows || []);
+      setForm({ date: "", venue: "", city: "", lineup: "", ticketUrl: "" });
+      setFormOpen(false);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm("Remove this show?")) return;
+    try {
+      const res = await fetch(`/api/helm/onesheet/shows?artistId=${encodeURIComponent(artistId)}&id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setShows(data.shows || []);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const fmtDate = (iso: string) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    if (!y || !m || !d) return iso;
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${months[m - 1]} ${d}, ${y}`;
+  };
+
+  return (
+    <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Upcoming Shows</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">Shown on your one-sheet. You can also add via chat (&ldquo;Add my show on…&rdquo;).</p>
+        </div>
+        {!formOpen && (
+          <button
+            onClick={() => { setFormOpen(true); setError(null); }}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
+          >
+            + Add Show
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-zinc-500 py-2">Loading…</p>
+      ) : shows.length === 0 && !formOpen ? (
+        <p className="text-xs text-zinc-500 py-2">No upcoming shows. Add one to appear on your one-sheet.</p>
+      ) : (
+        <div className="flex flex-col gap-2 mb-3">
+          {shows.map(show => (
+            <div key={show.id} className="flex items-baseline gap-3 p-3 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg">
+              <div className="shrink-0 text-xs font-bold text-white tabular-nums w-24">{fmtDate(show.date)}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-white truncate">
+                  {show.venue}{show.city ? ` · ${show.city}` : ""}
+                </p>
+                {show.lineup && <p className="text-[10px] text-zinc-500 truncate">{show.lineup}</p>}
+                {show.ticketUrl && (
+                  <a href={show.ticketUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#6366f1] hover:underline">
+                    Tickets →
+                  </a>
+                )}
+              </div>
+              <button
+                onClick={() => remove(show.id)}
+                className="shrink-0 px-2 py-1 rounded text-[10px] font-medium bg-[#1e1e1e] text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                title="Remove show"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {formOpen && (
+        <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3 flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="date"
+              value={form.date}
+              onChange={e => setForm({ ...form, date: e.target.value })}
+              className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none"
+            />
+            <input
+              type="text"
+              placeholder="Venue *"
+              value={form.venue}
+              onChange={e => setForm({ ...form, venue: e.target.value })}
+              className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+            />
+          </div>
+          <input
+            type="text"
+            placeholder="City (optional)"
+            value={form.city}
+            onChange={e => setForm({ ...form, city: e.target.value })}
+            className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+          />
+          <input
+            type="text"
+            placeholder="Lineup (e.g. with Sally Boy and Solo Kei)"
+            value={form.lineup}
+            onChange={e => setForm({ ...form, lineup: e.target.value })}
+            className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+          />
+          <input
+            type="url"
+            placeholder="Ticket URL (optional)"
+            value={form.ticketUrl}
+            onChange={e => setForm({ ...form, ticketUrl: e.target.value })}
+            className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+          />
+          {error && <p className="text-[10px] text-red-400">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={submit}
+              disabled={adding}
+              className="flex-1 px-3 py-1.5 rounded text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+            >
+              {adding ? "Saving…" : "Save Show"}
+            </button>
+            <button
+              onClick={() => { setFormOpen(false); setError(null); setForm({ date: "", venue: "", city: "", lineup: "", ticketUrl: "" }); }}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function OutreachTab({ artist, isPaid, onSubscribe }: {
   artist: ArtistData;
