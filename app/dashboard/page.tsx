@@ -990,7 +990,7 @@ function OverviewTab({
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(420px,3fr)]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
       {/* Main content */}
       <div className="flex flex-col gap-6">
         {/* Tasks — real queue only */}
