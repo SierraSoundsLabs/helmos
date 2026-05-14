@@ -1,3 +1,13 @@
+export interface UpcomingShow {
+  id: string;
+  date: string;            // ISO 8601 (e.g. "2026-05-23")
+  venue: string;
+  city?: string;
+  lineup?: string;         // free text e.g. "with Sally Boy and Solo Kei"
+  ticketUrl?: string;
+  addedAt: string;         // ISO 8601 timestamp
+}
+
 export interface OneSheetData {
   artistId: string;
   artistName: string;
@@ -20,6 +30,7 @@ export interface OneSheetData {
   };
   pressQuotes?: string[];
   bookingEmail?: string;
+  upcomingShows?: UpcomingShow[];
   createdAt: string;
 }
 

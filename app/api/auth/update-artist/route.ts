@@ -20,7 +20,7 @@ async function stripePost(path: string, body: Record<string, string>) {
  * POST /api/auth/update-artist
  * Body: { artistId: string }
  * Stores the new artistId in Stripe customer metadata (persistent).
- * Next magic link login will use this artist instead of the original signup artist.
+ * Next login will use this artist instead of the original signup artist.
  */
 export async function POST(req: NextRequest) {
   const session = getSession(req);

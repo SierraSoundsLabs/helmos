@@ -74,6 +74,11 @@ export default function LoginPage() {
           >
             {status === "loading" ? "Signing in…" : "Sign In"}
           </button>
+          <p className="text-center">
+            <a href="/forgot-password" className="text-xs text-zinc-500 hover:text-zinc-300 hover:underline">
+              Forgot or never set your password?
+            </a>
+          </p>
         </form>
 
         {/* Error */}
@@ -104,15 +109,7 @@ export default function LoginPage() {
           Continue with Google
         </a>
 
-        {/* Magic link */}
-        <p className="text-center text-zinc-600 text-xs mt-5">
-          Prefer magic link?{" "}
-          <a href="/" className="text-[#6366f1] hover:underline">
-            Send me a login email →
-          </a>
-        </p>
-
-        <p className="text-center text-zinc-700 text-xs mt-3">
+        <p className="text-center text-zinc-700 text-xs mt-5">
           Don&apos;t have a subscription?{" "}
           <a href="/" className="text-[#6366f1] hover:underline">
             Get started

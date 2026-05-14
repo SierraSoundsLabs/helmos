@@ -29,14 +29,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing artist data" }, { status: 400 });
   }
 
-  // Cache key includes latest release so it auto-busts when a new song drops
+  // Cache key includes latest release so it auto-busts when a new song drops.
+  // Also write to a bare key (no release slug) so the dashboard's GET prefetch
+  // — which doesn't know the release name — can fast-return for returning users.
   const latestSlug = artistData.latestRelease?.name
     ? artistData.latestRelease.name.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20)
     : "none";
   const cacheKey = `helm:analysis:${artistData.id}:${latestSlug}`;
+  const bareKey = `helm:analysis:${artistData.id}`;
   try {
     const cached = await kvGet(cacheKey);
     if (cached) {
+      // Refresh the bare-key copy so the dashboard prefetch keeps hitting
+      try { await kvSet(bareKey, cached, CACHE_TTL); } catch { /* non-fatal */ }
       return NextResponse.json(cached);
     }
   } catch {
@@ -45,8 +50,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const analysis = await analyzeArtist(artistData);
-    // Cache the result
+    // Cache under both the versioned key (for cache-busting) and the bare key
+    // (for the dashboard's prefetch path)
     try { await kvSet(cacheKey, analysis, CACHE_TTL); } catch { /* non-fatal */ }
+    try { await kvSet(bareKey, analysis, CACHE_TTL); } catch { /* non-fatal */ }
     return NextResponse.json(analysis);
   } catch (err) {
     console.error("Analysis error:", err);

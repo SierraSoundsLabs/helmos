@@ -838,11 +838,14 @@ function HelmChat({
     onSend(text);
   };
 
+  // Chat is sized to the viewport so the input never jumps off-screen,
+  // and stuck to the top of its column so it stays visible while the user
+  // scrolls the rest of the dashboard.
   return (
-    <div className={`bg-[#111] border rounded-xl flex flex-col transition-all duration-300 ${
+    <div className={`bg-[#111] border rounded-xl flex flex-col lg:sticky lg:top-4 h-[min(720px,calc(100dvh-7rem))] transition-[border-color,box-shadow] duration-300 ${
       isWaitingForUser
-        ? "border-amber-500/40 h-[780px] shadow-lg shadow-amber-500/5"
-        : "border-[#1e1e1e] h-[640px]"
+        ? "border-amber-500/40 shadow-lg shadow-amber-500/5"
+        : "border-[#1e1e1e]"
     }`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#1e1e1e] shrink-0">
@@ -987,11 +990,7 @@ function OverviewTab({
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
 
   return (
-    <div className={`grid grid-cols-1 gap-6 transition-all duration-300 ${
-      isChatWaitingForUser
-        ? "lg:grid-cols-[1fr_720px]"
-        : "lg:grid-cols-[1fr_560px]"
-    }`}>
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
       {/* Main content */}
       <div className="flex flex-col gap-6">
         {/* Tasks — real queue only */}
@@ -1054,7 +1053,9 @@ function OverviewTab({
               <h2 className="text-sm font-semibold text-white mb-3">Quick Actions</h2>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { label: "📄 Create One-Sheet",           desc: "Artist media kit from Spotify data",            doc: "one-sheet" as DocType },
+                  hasOneSheet
+                    ? { label: "📝 Update One-Sheet",        desc: "Tell Helm what to change",                       msg: "I want to update my one-sheet. What specifically should I update — bio, latest release, social links, contact info, or something else? Let me know and I'll regenerate it." }
+                    : { label: "📄 Create One-Sheet",        desc: "Artist media kit from Spotify data",            doc: "one-sheet" as DocType },
                   { label: "🔍 PRO Royalty Audit",          desc: "Compare recordings vs ASCAP/BMI & MLC",         royaltyAudit: true },
                   { label: "🎵 SoundExchange Audit",        desc: "Verify digital performance royalty registration", seAudit: true },
                   { label: "🔗 Pre-Save Strategy",          desc: "Plan your next release pre-save campaign",       msg: "I have an upcoming release and need a pre-save strategy. Walk me through what to set up and how to promote it." },
@@ -1530,6 +1531,17 @@ function WorksTab({
 }) {
   const releases = artist.allReleases || [];
   const [showSEAudit, setShowSEAudit] = React.useState(false);
+  // Task 7 — fetch any saved press release so we can surface a
+  // "View Press Release" button in the latest-release card.
+  const [pressRelease, setPressRelease] = React.useState<{ pressRelease: string; subject: string } | null>(null);
+  const [pressModalOpen, setPressModalOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (!artist.id) return;
+    fetch(`/api/helm/press-release?artistId=${artist.id}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.pressRelease) setPressRelease({ pressRelease: d.pressRelease, subject: d.subject }); })
+      .catch(() => { /* no press release yet — fine */ });
+  }, [artist.id]);
   const btn = (label: string, msg: string) => (
     <button
       onClick={() => isPaid ? onSendChat(msg) : onSubscribe()}
@@ -1627,6 +1639,14 @@ function WorksTab({
               </div>
               <p className="text-xs text-zinc-400 mb-3">Quick actions for this release:</p>
               <div className="flex flex-wrap gap-2">
+                {pressRelease && (
+                  <button
+                    onClick={() => setPressModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#6366f1]/15 border border-[#6366f1]/40 text-[#a5b4fc] hover:bg-[#6366f1]/25 hover:text-white transition-all"
+                  >
+                    <span>📰</span> View Press Release
+                  </button>
+                )}
                 {releaseTasks.map(task => (
                   <button
                     key={task.label}
@@ -1641,6 +1661,14 @@ function WorksTab({
           </div>
         );
       })()}
+
+      {pressModalOpen && pressRelease && (
+        <DocModal
+          content={pressRelease.pressRelease}
+          title={pressRelease.subject || "Press Release"}
+          onClose={() => setPressModalOpen(false)}
+        />
+      )}
 
       {/* All releases table */}
       <div className="bg-[#111] border border-[#1e1e1e] rounded-xl overflow-hidden">
@@ -2060,6 +2088,9 @@ function LinksTab({
         >{savingSocial ? "Saving…" : "Save Social Links"}</button>
       </div>
 
+      {/* Upcoming Shows card */}
+      <UpcomingShowsCard artistId={artist.id} />
+
       {/* Song Smart Links card */}
       <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
@@ -2276,6 +2307,216 @@ function LinksTab({
 
 
 // ─── OUTREACH TAB ─────────────────────────────────────────────────────────────
+const CONTACT_TYPE_OPTIONS: { id: string; label: string }[] = [
+  { id: "journalist",       label: "Journalists / Editors" },
+  { id: "playlist_curator", label: "Playlist Curators" },
+  { id: "booking_agent",    label: "Booking Agents" },
+  { id: "ar",               label: "A&R" },
+  { id: "promoter",         label: "Local Show Promoters" },
+  { id: "music_supervisor", label: "Music Supervisors (Sync)" },
+  { id: "radio_dj",         label: "Radio DJs / Program Directors" },
+];
+
+// ── UpcomingShowsCard ────────────────────────────────────────────────────────
+// Self-contained card for the LinksTab. Lists upcoming shows for the artist,
+// lets them add a new one (date + venue required; city/lineup/tickets optional)
+// or remove an existing one. Same API the chat uses via <save-show>.
+interface ShowItem {
+  id: string;
+  date: string;
+  venue: string;
+  city?: string;
+  lineup?: string;
+  ticketUrl?: string;
+  addedAt: string;
+}
+
+function UpcomingShowsCard({ artistId }: { artistId: string }) {
+  const [shows, setShows] = useState<ShowItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState({ date: "", venue: "", city: "", lineup: "", ticketUrl: "" });
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/helm/onesheet/shows?artistId=${encodeURIComponent(artistId)}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setShows(data.shows || []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [artistId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submit = async () => {
+    setError(null);
+    if (!form.date) { setError("Date required (YYYY-MM-DD)"); return; }
+    if (!form.venue.trim()) { setError("Venue required"); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) { setError("Date must be YYYY-MM-DD"); return; }
+    setAdding(true);
+    try {
+      const res = await fetch("/api/helm/onesheet/shows", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artistId,
+          date: form.date,
+          venue: form.venue.trim(),
+          city: form.city.trim() || undefined,
+          lineup: form.lineup.trim() || undefined,
+          ticketUrl: form.ticketUrl.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setError(j.error || "Failed to save show");
+        return;
+      }
+      const data = await res.json();
+      setShows(data.shows || []);
+      setForm({ date: "", venue: "", city: "", lineup: "", ticketUrl: "" });
+      setFormOpen(false);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm("Remove this show?")) return;
+    try {
+      const res = await fetch(`/api/helm/onesheet/shows?artistId=${encodeURIComponent(artistId)}&id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setShows(data.shows || []);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const fmtDate = (iso: string) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    if (!y || !m || !d) return iso;
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${months[m - 1]} ${d}, ${y}`;
+  };
+
+  return (
+    <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-5">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Upcoming Shows</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">Shown on your one-sheet. You can also add via chat (&ldquo;Add my show on…&rdquo;).</p>
+        </div>
+        {!formOpen && (
+          <button
+            onClick={() => { setFormOpen(true); setError(null); }}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
+          >
+            + Add Show
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-zinc-500 py-2">Loading…</p>
+      ) : shows.length === 0 && !formOpen ? (
+        <p className="text-xs text-zinc-500 py-2">No upcoming shows. Add one to appear on your one-sheet.</p>
+      ) : (
+        <div className="flex flex-col gap-2 mb-3">
+          {shows.map(show => (
+            <div key={show.id} className="flex items-baseline gap-3 p-3 bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg">
+              <div className="shrink-0 text-xs font-bold text-white tabular-nums w-24">{fmtDate(show.date)}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-white truncate">
+                  {show.venue}{show.city ? ` · ${show.city}` : ""}
+                </p>
+                {show.lineup && <p className="text-[10px] text-zinc-500 truncate">{show.lineup}</p>}
+                {show.ticketUrl && (
+                  <a href={show.ticketUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#6366f1] hover:underline">
+                    Tickets →
+                  </a>
+                )}
+              </div>
+              <button
+                onClick={() => remove(show.id)}
+                className="shrink-0 px-2 py-1 rounded text-[10px] font-medium bg-[#1e1e1e] text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                title="Remove show"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {formOpen && (
+        <div className="bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg p-3 flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="date"
+              value={form.date}
+              onChange={e => setForm({ ...form, date: e.target.value })}
+              className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none"
+            />
+            <input
+              type="text"
+              placeholder="Venue *"
+              value={form.venue}
+              onChange={e => setForm({ ...form, venue: e.target.value })}
+              className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+            />
+          </div>
+          <input
+            type="text"
+            placeholder="City (optional)"
+            value={form.city}
+            onChange={e => setForm({ ...form, city: e.target.value })}
+            className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+          />
+          <input
+            type="text"
+            placeholder="Lineup (e.g. with Sally Boy and Solo Kei)"
+            value={form.lineup}
+            onChange={e => setForm({ ...form, lineup: e.target.value })}
+            className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+          />
+          <input
+            type="url"
+            placeholder="Ticket URL (optional)"
+            value={form.ticketUrl}
+            onChange={e => setForm({ ...form, ticketUrl: e.target.value })}
+            className="bg-[#111] border border-[#1e1e1e] rounded px-2 py-1.5 text-xs text-zinc-300 outline-none placeholder:text-zinc-600"
+          />
+          {error && <p className="text-[10px] text-red-400">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={submit}
+              disabled={adding}
+              className="flex-1 px-3 py-1.5 rounded text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+            >
+              {adding ? "Saving…" : "Save Show"}
+            </button>
+            <button
+              onClick={() => { setFormOpen(false); setError(null); setForm({ date: "", venue: "", city: "", lineup: "", ticketUrl: "" }); }}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-[#1e1e1e] text-zinc-400 hover:bg-[#2e2e2e] transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OutreachTab({ artist, isPaid, onSubscribe }: {
   artist: ArtistData;
   isPaid: boolean;
@@ -2287,6 +2528,9 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
+  const [contactTypes, setContactTypes] = useState<Set<string>>(
+    new Set(["journalist", "playlist_curator", "booking_agent"])
+  );
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number } | null>(null);
@@ -2319,6 +2563,7 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
 
   const handleGenerate = async (count: number) => {
     if (!isPaid) { onSubscribe(); return; }
+    if (contactTypes.size === 0) return; // button is disabled in this state
     setGenerating(true);
     setDrafts([]);
     setSendResult(null);
@@ -2326,7 +2571,11 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
       const res = await fetch("/api/helm/outreach/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artistData: artist, count }),
+        body: JSON.stringify({
+          artistData: artist,
+          count,
+          contactTypes: Array.from(contactTypes),
+        }),
       });
       const data = await res.json();
       if (data.drafts) {
@@ -2338,6 +2587,15 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
     } finally {
       setGenerating(false);
     }
+  };
+
+  const toggleContactType = (id: string) => {
+    setContactTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const toggleSelect = (i: number) => {
@@ -2465,15 +2723,39 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
       <div className="flex flex-col gap-4">
         <div>
           <h2 className="text-sm font-semibold text-white mb-1">Generate Outreach</h2>
-          <p className="text-xs text-zinc-500">Helm will research and draft up to 10 personalized emails per day targeting journalists, playlist curators, and booking agents in your genre.</p>
+          <p className="text-xs text-zinc-500">Pick who Helm should reach out to, then pick how many emails to draft. Up to 10 per day.</p>
         </div>
+
+        {/* Contact-type multi-select */}
+        <div>
+          <p className="text-xs text-zinc-400 mb-2">What types of contacts do you want to reach?</p>
+          <div className="flex gap-1.5 flex-wrap">
+            {CONTACT_TYPE_OPTIONS.map(opt => {
+              const active = contactTypes.has(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => toggleContactType(opt.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? "bg-[#6366f1] border-[#6366f1] text-white" : "bg-[#111] border-[#1e1e1e] text-zinc-400 hover:border-[#2e2e2e]"}`}
+                >
+                  {active ? "✓ " : ""}{opt.label}
+                </button>
+              );
+            })}
+          </div>
+          {contactTypes.size === 0 && (
+            <p className="text-xs text-red-400 mt-2">Pick at least one contact type to generate.</p>
+          )}
+        </div>
+
         <div className="flex gap-2 flex-wrap">
           {[3, 5, 10].map(n => (
             <button
               key={n}
               onClick={() => handleGenerate(n)}
-              disabled={generating}
-              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 transition-colors"
+              disabled={generating || contactTypes.size === 0}
+              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {generating ? "Researching…" : `Generate ${n} Emails →`}
             </button>
@@ -2628,17 +2910,21 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
 
       {/* Inbox / replies */}
       {/* Inbox — always visible */}
-      <div className="flex flex-col gap-3">
+      <div id="inbox" className="flex flex-col gap-3 scroll-mt-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-white">
             Inbox
             {inbox.length > 0 && <span className="ml-1.5 text-zinc-500 font-normal">({inbox.length})</span>}
           </h2>
-          {inbox.length > 0 && (
-            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-              {inbox.filter(m => !m.inReplyTo).length > 0 ? `${inbox.length} replies` : `${inbox.length} messages`}
-            </span>
-          )}
+          {(() => {
+            const unread = inbox.filter(m => !m.read).length;
+            if (unread === 0) return null;
+            return (
+              <span className="text-[10px] font-bold text-[#6366f1] bg-[#6366f1]/15 border border-[#6366f1]/30 px-2 py-0.5 rounded-full">
+                {unread} unread
+              </span>
+            );
+          })()}
         </div>
 
         {inbox.length === 0 ? (
@@ -2653,29 +2939,59 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {inbox.map(msg => (
-              <div key={msg.id} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4 hover:border-[#2e2e2e] transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-7 h-7 rounded-full bg-[#6366f1]/20 flex items-center justify-center shrink-0">
-                        <span className="text-xs font-bold text-[#818cf8]">{(msg.fromName || msg.from)[0]?.toUpperCase()}</span>
+            {inbox.map(msg => {
+              const isUnread = !msg.read;
+              const markRead = async () => {
+                if (msg.read) return;
+                // Optimistic update
+                setInbox(prev => prev.map(m => m.id === msg.id ? { ...m, read: true } : m));
+                try {
+                  await fetch("/api/helm/outreach/inbox/read", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ artistSlug: slug, ids: [msg.id], read: true }),
+                  });
+                } catch {
+                  // Revert on failure
+                  setInbox(prev => prev.map(m => m.id === msg.id ? { ...m, read: false } : m));
+                }
+              };
+              return (
+                <div
+                  key={msg.id}
+                  onClick={markRead}
+                  className={`rounded-xl p-4 transition-colors cursor-pointer ${
+                    isUnread
+                      ? "bg-[#1a1a24] border border-[#6366f1]/40 hover:border-[#6366f1]/70"
+                      : "bg-[#111] border border-[#1e1e1e] hover:border-[#2e2e2e]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        {isUnread && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#6366f1] shrink-0" aria-label="Unread" />
+                        )}
+                        <div className="w-7 h-7 rounded-full bg-[#6366f1]/20 flex items-center justify-center shrink-0">
+                          <span className="text-xs font-bold text-[#818cf8]">{(msg.fromName || msg.from)[0]?.toUpperCase()}</span>
+                        </div>
+                        <span className={`text-sm font-semibold ${isUnread ? "text-white" : "text-zinc-300"}`}>{msg.fromName || msg.from}</span>
+                        <span className="text-[10px] text-zinc-600">{new Date(msg.receivedAt).toLocaleDateString()}</span>
                       </div>
-                      <span className="text-sm font-semibold text-white">{msg.fromName || msg.from}</span>
-                      <span className="text-[10px] text-zinc-600">{new Date(msg.receivedAt).toLocaleDateString()}</span>
+                      <p className={`text-xs font-medium mb-1.5 ml-9 ${isUnread ? "text-white" : "text-zinc-400"}`}>{msg.subject}</p>
+                      <p className="text-xs text-zinc-500 line-clamp-3 ml-9 leading-relaxed">{msg.text}</p>
                     </div>
-                    <p className="text-xs text-zinc-300 font-medium mb-1.5 ml-9">{msg.subject}</p>
-                    <p className="text-xs text-zinc-500 line-clamp-3 ml-9 leading-relaxed">{msg.text}</p>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); markRead(); setReplyModal(msg); setReplyBody(""); }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors shrink-0"
+                    >
+                      Reply →
+                    </button>
                   </div>
-                  <button
-                    onClick={() => { setReplyModal(msg); setReplyBody(""); }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors shrink-0"
-                  >
-                    Reply →
-                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -3024,7 +3340,14 @@ function DashboardContent() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [phase, setPhase] = useState<"loading-artist" | "loading-analysis" | "done" | "error">("loading-artist");
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools">(() => {
+    // Honor ?tab= query param from email-notification deep-links
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("tab");
+      if (p === "outreach" || p === "works" || p === "release" || p === "links" || p === "ai-tools") return p;
+    }
+    return "overview";
+  });
   const chatPanelRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
 
   // Switch to overview tab and scroll chat panel into view
@@ -3046,6 +3369,10 @@ function DashboardContent() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [savedBioAt, setSavedBioAt] = useState<string | null>(null);
   const [hasSavedBio, setHasSavedBio] = useState(false);
+  // Current saved bio content. Passed into chat so Claude can do
+  // intelligent in-place updates (e.g. "add my new collab" rather than
+  // rewriting from scratch) and stays in sync with /api/helm/bio.
+  const [savedBioContent, setSavedBioContent] = useState<{ short?: string; medium?: string; long?: string }>({});
   const [hasOneSheet, setHasOneSheet] = useState(false);
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [isChatWaitingForUser, setIsChatWaitingForUser] = useState(false);
@@ -3074,12 +3401,17 @@ function DashboardContent() {
       .catch(() => {});
   }, []);
 
-  // Check if artist has a saved bio
+  // Check if artist has a saved bio + cache content for chat
   useEffect(() => {
     if (!artistId) return;
     fetch(`/api/helm/bio?artistId=${artistId}`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.bio) setHasSavedBio(true); })
+      .then(d => {
+        if (d?.bio) {
+          setHasSavedBio(true);
+          setSavedBioContent({ short: d.bio.short, medium: d.bio.medium, long: d.bio.long });
+        }
+      })
       .catch(() => {});
   }, [artistId, savedBioAt]);
 
@@ -3164,6 +3496,10 @@ function DashboardContent() {
           messages: newMessages,
           artistContext: artistData,
           hasBio: hasSavedBio,
+          // Current saved bio content + future-relevant snapshots so the
+          // assistant can do intelligent in-place updates instead of
+          // rewriting from scratch or pretending it did.
+          currentBio: hasSavedBio ? savedBioContent : undefined,
         }),
       });
 
@@ -3188,11 +3524,18 @@ function DashboardContent() {
         });
       }
 
-      // Strip all action tags from display content
+      // Strip all action tags from display content.
+      // IMPORTANT: use [\s\S]*? (any char, non-greedy) rather than [^/]*. The
+      // latter breaks when an attribute value contains a forward slash (e.g.
+      // a ticketUrl on <save-show> with "https://..."), leaving the raw tag
+      // visible in chat AND preventing the detection regex below from
+      // matching (so the action never runs).
       const cleanContent = assistantContent
-        .replace(/<generate[^/]*\/>/g, "")
-        .replace(/<send-email[^/]*\/>/g, "")
-        .replace(/<book-shows[^/]*\/>/g, "")
+        .replace(/<generate[\s\S]*?\/>/g, "")
+        .replace(/<send-email[\s\S]*?\/>/g, "")
+        .replace(/<book-shows[\s\S]*?\/>/g, "")
+        .replace(/<save-show[\s\S]*?\/>/g, "")
+        .replace(/<save-bio[\s\S]*?\/>/g, "")
         .trim();
       if (cleanContent !== assistantContent.trim()) {
         setChatMessages(prev => {
@@ -3200,6 +3543,102 @@ function DashboardContent() {
           updated[updated.length - 1] = { role: "assistant", content: cleanContent };
           return updated;
         });
+      }
+
+      // Handle save-show tag (must run before <generate> so the show is in KV
+      // when the publish route reads it). Use [\s\S]*? so attribute values
+      // containing slashes (ticket URLs!) don't break the match.
+      let needsOneSheetRegen = false;
+      const saveShowMatch = assistantContent.match(
+        /<save-show\s+([\s\S]*?)\/>/i
+      );
+      if (saveShowMatch && artistData) {
+        const attrs = saveShowMatch[1];
+        const attr = (name: string) => {
+          const m = attrs.match(new RegExp(`${name}="([^"]*)"`, "i"));
+          return m ? m[1] : undefined;
+        };
+        const date = attr("date");
+        const venue = attr("venue");
+        if (date && venue) {
+          try {
+            const r = await fetch("/api/helm/onesheet/shows", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                artistId: artistData.id,
+                date,
+                venue,
+                city: attr("city"),
+                lineup: attr("lineup"),
+                ticketUrl: attr("ticketUrl") ?? attr("ticketurl"),
+              }),
+            });
+            if (r.ok) needsOneSheetRegen = true;
+          } catch (err) {
+            console.error("save-show failed", err);
+            setChatMessages(prev => [
+              ...prev,
+              { role: "assistant", content: `⚠️ I couldn't save that show. Try again, or add it from the dashboard.` },
+            ]);
+          }
+        }
+      }
+
+      // Handle save-bio tag (must run before <generate> so the bio is in KV
+      // when the publish route reads it). Attribute values can be long, may
+      // contain quotes/newlines — use [\s\S] greedy match up to next '" '.
+      const saveBioMatch = assistantContent.match(/<save-bio\s+([\s\S]*?)\/>/i);
+      if (saveBioMatch && artistData) {
+        const attrs = saveBioMatch[1];
+        // Attributes can span multiple lines. Capture each by name with a
+        // non-greedy match that ends before the next attribute name.
+        const attrLong = (name: string): string | undefined => {
+          const re = new RegExp(`${name}\\s*=\\s*"([\\s\\S]*?)"(?=\\s+(?:short|medium|long|\\s*\\/?>))`, "i");
+          const m = attrs.match(re);
+          if (m) return m[1].trim();
+          // Last attribute (no terminator after closing quote) fallback
+          const re2 = new RegExp(`${name}\\s*=\\s*"([\\s\\S]*?)"\\s*$`, "i");
+          const m2 = attrs.match(re2);
+          return m2 ? m2[1].trim() : undefined;
+        };
+        const short = attrLong("short");
+        const medium = attrLong("medium");
+        const long = attrLong("long");
+        if (short || medium || long) {
+          try {
+            const r = await fetch("/api/helm/bio", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                artistId: artistData.id,
+                artistName: artistData.name,
+                short,
+                medium,
+                long,
+                generatedFrom: "interview",
+              }),
+            });
+            if (r.ok) needsOneSheetRegen = true;
+            // Refresh local bio state so subsequent chat turns see the new
+            // saved bio (don't wait for the useEffect to re-fetch).
+            setSavedBioContent({
+              short: short ?? savedBioContent.short,
+              medium: medium ?? savedBioContent.medium,
+              long: long ?? savedBioContent.long,
+            });
+            setHasSavedBio(true);
+            setSavedBioAt(new Date().toISOString());
+          } catch (err) {
+            console.error("save-bio failed", err);
+            setChatMessages(prev => [
+              ...prev,
+              { role: "assistant", content: `⚠️ I couldn't save the updated bio. Try again, or edit it directly in the Links tab.` },
+            ]);
+          }
+        }
       }
 
       // Handle send-email tag
@@ -3284,6 +3723,15 @@ function DashboardContent() {
         });
       }
 
+      // Safety net: if save-show or save-bio succeeded but Claude forgot to
+      // emit <generate type="one-sheet" />, force the regen anyway. The
+      // contract is "successful save implies the one-sheet should refresh."
+      // This means the user's confirmation message becomes truthful even
+      // when the model misses the second tag.
+      if (needsOneSheetRegen && !/<generate\s+type="one-sheet"\s*\/>/i.test(assistantContent)) {
+        setTimeout(() => handleGenerateDoc("one-sheet"), 500);
+      }
+
       // Check for generate trigger in response
       const genMatch = assistantContent.match(/<generate\s+type="([^"]+)"\s*\/>/);
       if (genMatch) {
@@ -3336,54 +3784,7 @@ function DashboardContent() {
       { role: "user", content: "Run a royalty audit" },
       { role: "assistant", content: openingMsg },
     ]);
-    return;
-
-    // eslint-disable-next-line no-unreachable
-    void isChatStreaming;
-
-    const trackNames = [
-      ...artistData.allReleases.slice(0, 10).map(r => r.name),
-      ...artistData.topTracks.slice(0, 10).map(t => t.name),
-    ].filter((name, i, arr) => arr.indexOf(name) === i).slice(0, 10);
-
-    try {
-      const res = await fetch("/api/helm/royalty-audit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          artistName: artistData.name,
-          tracks: trackNames,
-          monthlyListeners: artistData.monthlyListeners,
-        }),
-      });
-
-      if (!res.ok) {
-        setChatMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: "Sorry, the royalty audit failed. Please try again." };
-          return updated;
-        });
-        return;
-      }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let content = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        content += decoder.decode(value, { stream: true });
-        setChatMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content };
-          return updated;
-        });
-      }
-    } finally {
-      setIsChatStreaming(false);
-    }
-  }, [artistData, isChatStreaming]);
+  }, [artistData, isPaid, handleSubscribe, focusChat, setChatMessages]);
 
   // Document generation handler
   const handleGenerateDoc = useCallback(async (type: DocType) => {
@@ -3443,8 +3844,17 @@ function DashboardContent() {
         const data = await res.json();
         if (data.url) {
           window.open(data.url, "_blank");
+          const missing: string[] = Array.isArray(data.missingSocials) ? data.missingSocials : [];
+          const missingLabel = (k: string) =>
+            ({ instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", appleMusic: "Apple Music" } as Record<string, string>)[k] ?? k;
+          const missingLine = missing.length
+            ? `\n\n⚠️ Missing social links: ${missing.map(missingLabel).join(", ")}.\nOpen the 🔗 Links tab to add them — they'll appear on your one-sheet automatically.`
+            : "";
+          const managerLine = data.managerEmail
+            ? `\n\nYour manager email (on the one-sheet): ${data.managerEmail}`
+            : "";
           setDocModal({
-            content: `Your one-sheet is ready!\n\n🔗 ${data.url}\n\nShare this link with labels, booking agents, and press. It includes your photo, stats, top tracks, and bio.\n\nTip: Use the Print / Download PDF button on the page to save a PDF.`,
+            content: `Your one-sheet is ready!\n\n🔗 ${data.url}\n\nShare this link with labels, booking agents, and press. It includes your photo, stats, top tracks, and bio.${managerLine}${missingLine}\n\nTip: Use the Print / Download PDF button on the page to save a PDF.`,
             title: "One-Sheet Ready ✓",
           });
         }

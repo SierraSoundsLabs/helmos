@@ -1,92 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { kvGet, kvSet } from "@/lib/kv";
-import { encodeSession, COOKIE_NAME, TTL } from "@/lib/session";
 import { findStripeCustomer } from "@/lib/stripe";
-import type { UserProfile } from "@/lib/tasks";
+import {
+  makeNewPasswordRecord,
+  verifyPassword,
+  type PasswordRecord,
+} from "@/lib/password";
+import { buildSessionAndRedirect } from "@/lib/auth";
 
-interface PasswordRecord {
-  salt: string;
-  hash: string;
-}
-
-function hexEncode(buf: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function hashPassword(
-  password: string,
-  salt: string
-): Promise<string> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"]
-  );
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: enc.encode(salt),
-      iterations: 100000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    256 // 32 bytes
-  );
-  return hexEncode(bits);
-}
-
-async function buildSessionAndRedirect(
-  email: string,
-  customerId: string,
-  artistId: string
-): Promise<NextResponse> {
-  // Resolve artistId from KV if not set
-  let resolvedArtistId = artistId;
-  if (!resolvedArtistId) {
-    const mapped = await kvGet<string>(
-      `helm:email_artist:${email.toLowerCase()}`
-    );
-    if (mapped) resolvedArtistId = mapped;
-  }
-
-  const sessionToken = encodeSession({
-    email,
-    artistId: resolvedArtistId || "",
-    customerId,
-    plan: "pro",
-  });
-
-  const cookieStore = await cookies();
-  cookieStore.set(COOKIE_NAME, sessionToken, {
-    httpOnly: true,
-    secure: true,
-    maxAge: TTL,
-    path: "/",
-    sameSite: "lax",
-  });
-
-  // Paying subscribers (have customerId) always go straight to dashboard —
-  // they've already completed intake; don't send back regardless of artistId.
-  let redirect = "/intake";
-  if (customerId) {
-    redirect = resolvedArtistId ? `/dashboard?artist=${resolvedArtistId}` : "/dashboard";
-  } else if (resolvedArtistId) {
-    const profile = await kvGet<UserProfile>(
-      `helm:user:${resolvedArtistId}:profile`
-    );
-    redirect = profile
-      ? `/dashboard?artist=${resolvedArtistId}`
-      : `/intake?artist=${resolvedArtistId}`;
-  }
-
-  return NextResponse.json({ ok: true, artistId: resolvedArtistId, redirect });
-}
+// hashPassword/verifyPassword and buildSessionAndRedirect live in lib/
+// (also used by /api/auth/reset-password/confirm).
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
@@ -137,10 +60,8 @@ export async function POST(req: NextRequest) {
       }
 
       // Hash and store password
-      const saltBytes = crypto.getRandomValues(new Uint8Array(16));
-      const salt = hexEncode(saltBytes.buffer);
-      const hash = await hashPassword(password, salt);
-      await kvSet(kvKey, { salt, hash } satisfies PasswordRecord);
+      const record = await makeNewPasswordRecord(password);
+      await kvSet(kvKey, record satisfies PasswordRecord);
 
       return buildSessionAndRedirect(
         email,
@@ -153,13 +74,12 @@ export async function POST(req: NextRequest) {
     const record = await kvGet<PasswordRecord>(kvKey);
     if (!record) {
       return NextResponse.json(
-        { error: "No account found with this email. Please create an account." },
+        { error: "No account or no password set. If you subscribed, use the reset link below to set one up." },
         { status: 401 }
       );
     }
 
-    const hash = await hashPassword(password, record.salt);
-    if (hash !== record.hash) {
+    if (!(await verifyPassword(password, record))) {
       return NextResponse.json(
         { error: "Incorrect password." },
         { status: 401 }
@@ -191,3 +111,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

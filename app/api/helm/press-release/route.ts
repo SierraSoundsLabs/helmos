@@ -2,7 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { fetchArtistData } from "@/lib/spotify";
-import { kvSet } from "@/lib/kv";
+import { kvGet, kvSet } from "@/lib/kv";
+
+interface StoredPressRelease {
+  pressRelease: string;
+  subject: string;
+  type?: string;
+  artistId: string;
+  generatedAt: string;
+  source?: string;
+}
+
+// GET /api/helm/press-release?artistId=X — returns the latest stored press
+// release for that artist (used by Works & Recordings to surface a
+// "View Press Release" button).
+export async function GET(req: NextRequest) {
+  const session = getSession(req);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const artistId = req.nextUrl.searchParams.get("artistId");
+  if (!artistId) {
+    return NextResponse.json({ error: "artistId required" }, { status: 400 });
+  }
+  const data = await kvGet<StoredPressRelease>(
+    `helm:artist:${artistId}:press-release:latest`
+  );
+  if (!data) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  return NextResponse.json(data);
+}
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -106,13 +136,21 @@ export async function POST(req: NextRequest) {
   const subject = firstLine.replace(/^#+\s*/, "").trim() || `${artist.name} — ${type} announcement`;
 
   const timestamp = Date.now();
-  const kvKey = `helm:user:${session.email}:press-release:${timestamp}`;
-  await kvSet(kvKey, {
+  const generatedAt = new Date().toISOString();
+  const payload = {
     pressRelease,
     subject,
     type,
     artistId,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
+  };
+  const kvKey = `helm:user:${session.email}:press-release:${timestamp}`;
+  await kvSet(kvKey, payload);
+  // Also save under the artist-keyed "latest" location so WorksTab can
+  // surface a "View Press Release" button.
+  await kvSet(`helm:artist:${artistId}:press-release:latest`, {
+    ...payload,
+    source: "direct",
   });
 
   return NextResponse.json({ pressRelease, subject });
