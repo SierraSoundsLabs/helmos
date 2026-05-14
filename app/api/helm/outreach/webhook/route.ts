@@ -18,6 +18,7 @@ export interface InboundEmail {
   html?: string;
   inReplyTo?: string;
   receivedAt: string;
+  read?: boolean;
 }
 
 function verifyResendSignature(payload: string, signature: string, secret: string): boolean {
@@ -108,35 +109,52 @@ export async function POST(req: NextRequest) {
   const existing = (await kvGet<string[]>(idsKey)) ?? [];
   await kvSet(idsKey, [...existing, id]);
 
-  // Task 4 — forward to the artist's real email so they actually see it.
-  // The slug→email mapping is written by /api/helm/onesheet/publish and
-  // any future flow that knows the artist's real email.
+  // Notification-only forwarding to the artist's real email.
+  //
+  // Privacy design: we DO NOT include the full email body or set Reply-To.
+  // If we forwarded full content with Reply-To set, the artist replying
+  // from their own mail client would leak their real From: address to the
+  // outside sender. Instead, we send a short notification with a link to
+  // the Helm inbox where the artist can read and reply via slug@helmos.co
+  // (their real email is never exposed to outsiders).
   const artistRealEmail = await kvGet<string>(`helm:slug_email:${artistSlug}`);
   if (artistRealEmail) {
     try {
-      const subjectLine = `[Helm] ${subject}`;
-      const headerBlock =
-        `Sent to your manager email (${toAddress})\n` +
-        `From: ${fromName ? `${fromName} <${from}>` : from}\n` +
-        `Reply to this email to respond directly to the sender.\n` +
-        `────────────────────────────────────────\n\n`;
+      const senderLabel = fromName ? `${fromName} <${from}>` : from;
+      const previewLine = text.split(/\n/).map(s => s.trim()).filter(Boolean)[0]?.slice(0, 120) ?? "";
+      const inboxUrl = `https://helmos.co/dashboard?tab=outreach#inbox`;
+
       await sendEmail({
         to: artistRealEmail,
-        from: `Helm Manager <${toAddress}>`,
-        replyTo: from,
-        subject: subjectLine,
-        text: headerBlock + text,
-        html: html
-          ? `<div style="font-family:sans-serif;color:#666;font-size:13px;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:16px">
-               Sent to your manager email (<strong>${toAddress}</strong>)<br/>
-               From: ${fromName ? `${fromName} &lt;${from}&gt;` : from}<br/>
-               <em>Reply to this email to respond directly to the sender.</em>
-             </div>${html}`
-          : headerBlock.replace(/\n/g, "<br/>") + text.replace(/\n/g, "<br/>"),
-        headers: inReplyTo ? { "In-Reply-To": inReplyTo } : undefined,
+        from: `Helm <noreply@helmos.co>`,
+        subject: `[Helm] New message from ${fromName || from}`,
+        text: [
+          `You have a new message in your Helm inbox.`,
+          ``,
+          `From: ${senderLabel}`,
+          `Subject: ${subject}`,
+          previewLine ? `Preview: ${previewLine}…` : ``,
+          ``,
+          `Open in Helm: ${inboxUrl}`,
+          ``,
+          `Reply from inside Helm — your real email stays private.`,
+          ``,
+          `— Helm`,
+        ].filter(Boolean).join("\n"),
+        html: `
+          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#222">
+            <p style="font-size:14px;color:#666;margin:0 0 16px">You have a new message in your Helm inbox.</p>
+            <div style="background:#f7f7fb;border:1px solid #e5e5ee;border-radius:8px;padding:16px;margin-bottom:20px">
+              <p style="font-size:13px;color:#666;margin:0 0 4px">From: <strong style="color:#222">${senderLabel.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</strong></p>
+              <p style="font-size:13px;color:#666;margin:0 0 8px">Subject: <strong style="color:#222">${subject.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</strong></p>
+              ${previewLine ? `<p style="font-size:13px;color:#444;margin:0;font-style:italic">"${previewLine.replace(/</g, "&lt;").replace(/>/g, "&gt;")}…"</p>` : ""}
+            </div>
+            <a href="${inboxUrl}" style="display:inline-block;background:#6366f1;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600">Open in Helm →</a>
+            <p style="font-size:12px;color:#888;margin:20px 0 0">Reply from inside Helm — your real email stays private.</p>
+          </div>`,
       });
     } catch (err) {
-      console.error("inbound forward failed", err);
+      console.error("inbound notification failed", err);
       // Non-fatal — email is still stored in KV inbox for retrieval
     }
   }

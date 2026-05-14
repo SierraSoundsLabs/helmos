@@ -2911,17 +2911,21 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
 
       {/* Inbox / replies */}
       {/* Inbox — always visible */}
-      <div className="flex flex-col gap-3">
+      <div id="inbox" className="flex flex-col gap-3 scroll-mt-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-white">
             Inbox
             {inbox.length > 0 && <span className="ml-1.5 text-zinc-500 font-normal">({inbox.length})</span>}
           </h2>
-          {inbox.length > 0 && (
-            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-              {inbox.filter(m => !m.inReplyTo).length > 0 ? `${inbox.length} replies` : `${inbox.length} messages`}
-            </span>
-          )}
+          {(() => {
+            const unread = inbox.filter(m => !m.read).length;
+            if (unread === 0) return null;
+            return (
+              <span className="text-[10px] font-bold text-[#6366f1] bg-[#6366f1]/15 border border-[#6366f1]/30 px-2 py-0.5 rounded-full">
+                {unread} unread
+              </span>
+            );
+          })()}
         </div>
 
         {inbox.length === 0 ? (
@@ -2936,29 +2940,59 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {inbox.map(msg => (
-              <div key={msg.id} className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4 hover:border-[#2e2e2e] transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-7 h-7 rounded-full bg-[#6366f1]/20 flex items-center justify-center shrink-0">
-                        <span className="text-xs font-bold text-[#818cf8]">{(msg.fromName || msg.from)[0]?.toUpperCase()}</span>
+            {inbox.map(msg => {
+              const isUnread = !msg.read;
+              const markRead = async () => {
+                if (msg.read) return;
+                // Optimistic update
+                setInbox(prev => prev.map(m => m.id === msg.id ? { ...m, read: true } : m));
+                try {
+                  await fetch("/api/helm/outreach/inbox/read", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ artistSlug: slug, ids: [msg.id], read: true }),
+                  });
+                } catch {
+                  // Revert on failure
+                  setInbox(prev => prev.map(m => m.id === msg.id ? { ...m, read: false } : m));
+                }
+              };
+              return (
+                <div
+                  key={msg.id}
+                  onClick={markRead}
+                  className={`rounded-xl p-4 transition-colors cursor-pointer ${
+                    isUnread
+                      ? "bg-[#1a1a24] border border-[#6366f1]/40 hover:border-[#6366f1]/70"
+                      : "bg-[#111] border border-[#1e1e1e] hover:border-[#2e2e2e]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        {isUnread && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#6366f1] shrink-0" aria-label="Unread" />
+                        )}
+                        <div className="w-7 h-7 rounded-full bg-[#6366f1]/20 flex items-center justify-center shrink-0">
+                          <span className="text-xs font-bold text-[#818cf8]">{(msg.fromName || msg.from)[0]?.toUpperCase()}</span>
+                        </div>
+                        <span className={`text-sm font-semibold ${isUnread ? "text-white" : "text-zinc-300"}`}>{msg.fromName || msg.from}</span>
+                        <span className="text-[10px] text-zinc-600">{new Date(msg.receivedAt).toLocaleDateString()}</span>
                       </div>
-                      <span className="text-sm font-semibold text-white">{msg.fromName || msg.from}</span>
-                      <span className="text-[10px] text-zinc-600">{new Date(msg.receivedAt).toLocaleDateString()}</span>
+                      <p className={`text-xs font-medium mb-1.5 ml-9 ${isUnread ? "text-white" : "text-zinc-400"}`}>{msg.subject}</p>
+                      <p className="text-xs text-zinc-500 line-clamp-3 ml-9 leading-relaxed">{msg.text}</p>
                     </div>
-                    <p className="text-xs text-zinc-300 font-medium mb-1.5 ml-9">{msg.subject}</p>
-                    <p className="text-xs text-zinc-500 line-clamp-3 ml-9 leading-relaxed">{msg.text}</p>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); markRead(); setReplyModal(msg); setReplyBody(""); }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors shrink-0"
+                    >
+                      Reply →
+                    </button>
                   </div>
-                  <button
-                    onClick={() => { setReplyModal(msg); setReplyBody(""); }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors shrink-0"
-                  >
-                    Reply →
-                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -3307,7 +3341,14 @@ function DashboardContent() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [phase, setPhase] = useState<"loading-artist" | "loading-analysis" | "done" | "error">("loading-artist");
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools">(() => {
+    // Honor ?tab= query param from email-notification deep-links
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("tab");
+      if (p === "outreach" || p === "works" || p === "release" || p === "links" || p === "ai-tools") return p;
+    }
+    return "overview";
+  });
   const chatPanelRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
 
   // Switch to overview tab and scroll chat panel into view
