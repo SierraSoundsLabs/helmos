@@ -3524,12 +3524,17 @@ function DashboardContent() {
         });
       }
 
-      // Strip all action tags from display content
+      // Strip all action tags from display content.
+      // IMPORTANT: use [\s\S]*? (any char, non-greedy) rather than [^/]*. The
+      // latter breaks when an attribute value contains a forward slash (e.g.
+      // a ticketUrl on <save-show> with "https://..."), leaving the raw tag
+      // visible in chat AND preventing the detection regex below from
+      // matching (so the action never runs).
       const cleanContent = assistantContent
-        .replace(/<generate[^/]*\/>/g, "")
-        .replace(/<send-email[^/]*\/>/g, "")
-        .replace(/<book-shows[^/]*\/>/g, "")
-        .replace(/<save-show[^/]*\/>/g, "")
+        .replace(/<generate[\s\S]*?\/>/g, "")
+        .replace(/<send-email[\s\S]*?\/>/g, "")
+        .replace(/<book-shows[\s\S]*?\/>/g, "")
+        .replace(/<save-show[\s\S]*?\/>/g, "")
         .replace(/<save-bio[\s\S]*?\/>/g, "")
         .trim();
       if (cleanContent !== assistantContent.trim()) {
@@ -3541,9 +3546,11 @@ function DashboardContent() {
       }
 
       // Handle save-show tag (must run before <generate> so the show is in KV
-      // when the publish route reads it).
+      // when the publish route reads it). Use [\s\S]*? so attribute values
+      // containing slashes (ticket URLs!) don't break the match.
+      let needsOneSheetRegen = false;
       const saveShowMatch = assistantContent.match(
-        /<save-show\s+([^/]*?)\/>/i
+        /<save-show\s+([\s\S]*?)\/>/i
       );
       if (saveShowMatch && artistData) {
         const attrs = saveShowMatch[1];
@@ -3555,7 +3562,7 @@ function DashboardContent() {
         const venue = attr("venue");
         if (date && venue) {
           try {
-            await fetch("/api/helm/onesheet/shows", {
+            const r = await fetch("/api/helm/onesheet/shows", {
               method: "POST",
               credentials: "include",
               headers: { "Content-Type": "application/json" },
@@ -3568,6 +3575,7 @@ function DashboardContent() {
                 ticketUrl: attr("ticketUrl") ?? attr("ticketurl"),
               }),
             });
+            if (r.ok) needsOneSheetRegen = true;
           } catch (err) {
             console.error("save-show failed", err);
             setChatMessages(prev => [
@@ -3600,7 +3608,7 @@ function DashboardContent() {
         const long = attrLong("long");
         if (short || medium || long) {
           try {
-            await fetch("/api/helm/bio", {
+            const r = await fetch("/api/helm/bio", {
               method: "POST",
               credentials: "include",
               headers: { "Content-Type": "application/json" },
@@ -3613,6 +3621,7 @@ function DashboardContent() {
                 generatedFrom: "interview",
               }),
             });
+            if (r.ok) needsOneSheetRegen = true;
             // Refresh local bio state so subsequent chat turns see the new
             // saved bio (don't wait for the useEffect to re-fetch).
             setSavedBioContent({
@@ -3712,6 +3721,15 @@ function DashboardContent() {
         }).catch(() => {
           setChatMessages(prev => [...prev, { role: "assistant", content: `❌ Something went wrong with booking outreach. Please try again.` }]);
         });
+      }
+
+      // Safety net: if save-show or save-bio succeeded but Claude forgot to
+      // emit <generate type="one-sheet" />, force the regen anyway. The
+      // contract is "successful save implies the one-sheet should refresh."
+      // This means the user's confirmation message becomes truthful even
+      // when the model misses the second tag.
+      if (needsOneSheetRegen && !/<generate\s+type="one-sheet"\s*\/>/i.test(assistantContent)) {
+        setTimeout(() => handleGenerateDoc("one-sheet"), 500);
       }
 
       // Check for generate trigger in response

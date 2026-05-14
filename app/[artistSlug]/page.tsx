@@ -154,6 +154,44 @@ export default async function ArtistOneSheePage({ params }: Props) {
           </section>
         )}
 
+        {/* Upcoming Shows */}
+        {data.upcomingShows && data.upcomingShows.length > 0 && (
+          <section>
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Upcoming Shows</h2>
+            <div className="flex flex-col gap-2">
+              {data.upcomingShows.map((show) => {
+                const [y, m, d] = show.date.split("-").map(Number);
+                const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                const dateLabel = (y && m && d) ? `${months[m - 1]} ${d}, ${y}` : show.date;
+                return (
+                  <div
+                    key={show.id}
+                    className="flex items-baseline gap-4 p-3 bg-[#111] border border-[#1e1e1e] rounded-xl"
+                  >
+                    <div className="text-xs font-bold text-white tabular-nums w-24 shrink-0">{dateLabel}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">
+                        {show.venue}{show.city ? <span className="text-zinc-500"> · {show.city}</span> : null}
+                      </p>
+                      {show.lineup && <p className="text-xs text-zinc-500 truncate mt-0.5">{show.lineup}</p>}
+                    </div>
+                    {show.ticketUrl && (
+                      <a
+                        href={show.ticketUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-semibold text-[#6366f1] hover:text-[#818cf8] shrink-0"
+                      >
+                        Tickets →
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {/* Top Tracks */}
         {data.topTracks.length > 0 && (
           <section>
