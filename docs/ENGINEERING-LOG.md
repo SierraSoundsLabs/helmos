@@ -4,6 +4,59 @@ Append-only journal — most recent at the top. Read at the start of each Claude
 
 ---
 
+## 2026-05-14 — Followup batch 2: cleanup + Helm-hosted inbox
+
+Rory's decisions: backfill go-ahead, delete duplicate, rip magic link,
+identity cleanup defer, helm inbox yes. Executed all four.
+
+**1. `slug_email:*` backfill — no-op.** Only one published one-sheet
+exists in production (`onesheet:jiwon`), and it was published after
+Task 4 shipped so the mapping was already in place. Nothing to backfill.
+
+**2. Nested clone deletion.** `~/helmos/helmos/` (17MB local duplicate)
+removed via `rm -rf`. Untracked anyway, no git/data impact.
+
+**3. Magic-link rip-out.** Per HELM_CONTEXT.md's claim ("removed") that
+turned out not to be true — the UI and routes were still live. Now
+fully gone:
+- Deleted `app/api/auth/magic/` (send + verify routes)
+- Removed Magic Link tab + handler from homepage; simplified to a
+  single password form
+- Removed "Prefer magic link?" link from `/login`; replaced with
+  "Forgot or never set your password?"
+- Cleaned 2 orphaned `magic:*` tokens from KV
+- Updated stale comments in `intake/route.ts`, `update-artist/route.ts`,
+  `lib/auth.ts`
+
+**4. Helm-hosted inbox (`feat(inbox)`).**
+
+   A) **Privacy fix.** Previously, inbound emails to `slug@helmos.co`
+   were forwarded full-content to the artist's real email with
+   `Reply-To` set to the original sender. The artist replying from
+   their mail client leaked their real `From:` address. Now: the
+   forwarded copy is a short NOTIFICATION ONLY (sender + subject +
+   120-char preview + deep-link button), no body, no Reply-To. Artist
+   replies inside Helm via the existing modal (sends from
+   `slug@helmos.co`).
+
+   B) **Read/unread state.**
+   - `InboundEmail` gains optional `read` field.
+   - NEW `POST /api/helm/outreach/inbox/read` — batch-mark by ID.
+   - Inbox UI: unread messages get purple dot + accented border +
+     bolder text; click anywhere on a message to mark read; unread
+     count chip in the header.
+
+   C) **Deep-link from notification.** Notification email points to
+   `/dashboard?tab=outreach#inbox`; dashboard now honors `?tab=` to
+   open the right tab; `#inbox` anchor scrolls into view.
+
+**Still pending:**
+- Identity cleanup (deferred per Rory).
+- Threaded conversation view (inbound + outbound on one timeline) —
+  worth doing later but not asked for yet.
+
+---
+
 ## 2026-05-14 — Followup batch: tech debt + shows UI
 
 Rory said "fix all this" to the followups I listed. Shipped five
