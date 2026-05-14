@@ -1,42 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-import { encodeSession, COOKIE_NAME, TTL, decodeSession } from "@/lib/session";
+import { NextResponse } from "next/server";
 
-// Dev auto-login: only runs in non-production environments.
-// Sets a permanent paid session so you never have to log in during local dev or Vercel preview.
-const DEV_SESSION = {
-  email: "dev@helmos.co",
-  artistId: "dev-artist",
-  customerId: "cus_dev",
-  plan: "pro" as const,
-};
-
-export function middleware(req: NextRequest) {
-  if (process.env.NODE_ENV === "production") return NextResponse.next();
-
-  // Skip API auth routes and static assets
-  const { pathname } = req.nextUrl;
-  if (
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon")
-  ) {
-    return NextResponse.next();
-  }
-
-  const existing = req.cookies.get(COOKIE_NAME)?.value;
-  if (existing && decodeSession(existing)) return NextResponse.next();
-
-  // No valid session — auto-set a dev paid session
-  const token = encodeSession(DEV_SESSION);
-  const res = NextResponse.next();
-  res.cookies.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: false,
-    maxAge: TTL,
-    path: "/",
-    sameSite: "lax",
-  });
-  return res;
+// Middleware runs on Edge runtime — no Node APIs (crypto, Buffer, etc.) allowed.
+//
+// Previously we set a permanent dev paid session here so `npm run dev` would
+// "just work" without logging in. That code called `encodeSession()` which uses
+// Node `crypto.createHmac()` and crashed every page locally with a 500 error.
+// Production was unaffected (the function short-circuited there), but local
+// development was effectively broken.
+//
+// The dev-auto-login also used fake values (`dev-artist` Spotify ID, `cus_dev`
+// Stripe customer) that couldn't load real data anyway. The right local-dev
+// workflow is the real login flow: forgot-password → email link → set password.
+export function middleware() {
+  return NextResponse.next();
 }
 
 export const config = {
