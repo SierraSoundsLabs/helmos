@@ -4,6 +4,48 @@ Append-only journal — most recent at the top. Read at the start of each Claude
 
 ---
 
+## 2026-05-14 — Chat honesty fix + upcoming-shows feature
+
+Rory tested Task 2's "Update One-Sheet" flow on the preview by asking
+the chat to add an upcoming show. The bot kept claiming "Regenerating
+now" without actually firing `<generate>`, and even if it had, there
+was no field for shows on the one-sheet. Two real bugs underneath.
+
+**Fix A — chat lying:** added `GENERATE RULE — TAG OR IT DIDN'T HAPPEN`
+to the chat system prompt, modeled on the existing `EMAIL SENDING RULE`.
+Tells Claude that the tag IS the generation and to never pretend.
+
+**Fix B — upcoming-shows capability** (full feature):
+- `UpcomingShow` type in `lib/types.ts`; `upcomingShows?` field on
+  `OneSheetData`.
+- NEW `app/api/helm/onesheet/shows/route.ts` — GET / POST / DELETE,
+  persists at `helm:artist:{id}:upcoming-shows`, dedupes on date+venue,
+  filters past dates on read.
+- Publish route reads + includes shows.
+- One-sheet display renders an "Upcoming Shows" section.
+- System prompt teaches the new `<save-show date="..." venue="..."
+  city="..." lineup="..." />` tag with concrete example.
+- Dashboard chat handler detects `<save-show>`, POSTs to the new
+  endpoint before continuing with the existing `<generate>` flow,
+  strips the tag from displayed content.
+
+After this, the exact transcript Rory shared produces both a
+`<save-show>` AND a `<generate type="one-sheet" />` and the show
+appears on the one-sheet.
+
+**Follow-ups:**
+- A UI panel to view/edit/delete saved shows from the dashboard (Links
+  tab or a new Shows tab). Currently shows are only manageable via
+  chat or direct API.
+- Year handling: if the artist gives a date without a year, the
+  prompt instructs Claude to use the next occurrence — worth testing
+  edge cases (e.g. "Dec 31").
+- The lying pattern likely affects other tags too (e.g. `<book-shows>`,
+  `<save-show>` itself). Worth a broader audit of the prompt to ensure
+  every action-triggering tag has a TAG-OR-IT-DIDN'T-HAPPEN rule.
+
+---
+
 ## 2026-05-13 — Seven-task batch on `feat/password-reset`
 
 After password reset shipped to the branch, Rory queued 7 follow-up tasks
