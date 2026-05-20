@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const inter = Inter({
@@ -45,6 +46,10 @@ export default function RootLayout({
         <footer className="w-full text-center py-4 text-xs text-zinc-600">
           © 2026 Sierra Sounds LLC
         </footer>
+        {/* Vercel Web Analytics — automatic pageview tracking + custom
+            events. Free tier is 2,500 events/mo (plenty for Helm today).
+            Requires one-click enable in Vercel project Settings → Analytics. */}
+        <Analytics />
       </body>
     </html>
   );
