@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { track } from "@vercel/analytics";
 
 const LOADING_STEPS = [
   "Scanning your Spotify profile...",
@@ -39,9 +40,16 @@ function HomeContent() {
     const match = url.trim().match(/spotify\.com\/artist\/([A-Za-z0-9]+)/);
     if (!match) {
       setError("Please enter a valid Spotify artist URL");
+      // Track form submissions with an unparseable URL — tells us who's
+      // bouncing off the funnel because of bad/odd Spotify input.
+      track("spotify_url_invalid");
       return;
     }
     const artistId = match[1];
+    // Successful Spotify URL submission → dashboard navigation begins.
+    // Use artistId (the Spotify ID) as a property so we can spot
+    // duplicate-artist analyses too.
+    track("spotify_url_submitted", { artistId });
 
     setLoading(true);
     setLoadingStep(0);
