@@ -9,9 +9,24 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Helmos — Automated Chief Growth Officer for Music",
+  metadataBase: new URL("https://helmos.co"),
+  title: {
+    default: "Helm — AI Chief of Staff for Independent Music Artists",
+    template: "%s — Helm",
+  },
   description:
-    "Automated Chief Growth Officer for Music. Paste your Spotify link and get a personalized action plan.",
+    "Helm is an AI Chief of Staff for independent music artists. Generate one-sheets, bios, press releases, playlist pitches, and royalty audits — and send real outreach. Paste your Spotify link to get started.",
+  keywords: [
+    "AI music manager",
+    "music artist tools",
+    "one-sheet generator",
+    "EPK builder",
+    "playlist pitch",
+    "royalty audit",
+    "music marketing AI",
+    "Spotify artist analytics",
+    "indie music tools",
+  ],
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
@@ -20,12 +35,47 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-icon.png",
   },
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
-    title: "Helmos — Automated Chief Growth Officer for Music",
-    description: "Automated Chief Growth Officer for Music.",
-    siteName: "Helmos",
+    type: "website",
+    url: "https://helmos.co/",
+    siteName: "Helm",
+    title: "Helm — AI Chief of Staff for Independent Music Artists",
+    description:
+      "Generate one-sheets, bios, press releases, playlist pitches, and royalty audits — automated for indie artists.",
+  },
+  twitter: {
+    card: "summary",
+    title: "Helm — AI Chief of Staff for Independent Music Artists",
+    description:
+      "Generate one-sheets, bios, press releases, playlist pitches, and royalty audits — automated for indie artists.",
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
+
+// Site-wide JSON-LD — Organization + WebSite. Goes inline in <head> so it's
+// available to crawlers without JS execution.
+const ROOT_STRUCTURED_DATA = [
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "Helm",
+    legalName: "Sierra Sounds LLC",
+    url: "https://helmos.co",
+    logo: "https://helmos.co/icon-512.png",
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "Helm",
+    url: "https://helmos.co",
+  },
+];
 
 export default function RootLayout({
   children,
@@ -40,6 +90,15 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
         <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
         <link rel="apple-touch-icon" href="/apple-icon.png" />
+        {/* Site-wide JSON-LD (Organization + WebSite) for rich results */}
+        {ROOT_STRUCTURED_DATA.map((entry, i) => (
+          <script
+            key={i}
+            type="application/ld+json"
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(entry) }}
+          />
+        ))}
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
