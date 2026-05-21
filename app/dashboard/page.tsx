@@ -3929,7 +3929,9 @@ function DashboardContent() {
     try {
       setPhase("loading-artist");
 
-      // Try to load cached analysis first — skip scan screen for returning users
+      // Try to load cached analysis first — skip scan screen for returning users.
+      // The bare analysis key never expires, so any artist who's ever been
+      // analyzed gets an instant load here and never sees the scan screen.
       const cachedRes = await fetch(`/api/analyze?artistId=${artistId}`);
       if (cachedRes.ok) {
         const cachedAnalysis = await cachedRes.json();
@@ -3940,6 +3942,16 @@ function DashboardContent() {
           setArtistData(artist);
           setAnalysis(cachedAnalysis);
           setPhase("done");
+          // Background refresh — recompute the analysis so the cache stays
+          // current (e.g. picks up a new release) without ever blocking the
+          // UI. POST is cheap when the versioned cache is warm; it only runs
+          // a fresh Claude analysis when genuinely stale, and that happens
+          // off-screen after the dashboard is already showing.
+          fetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(artist),
+          }).catch(() => { /* non-fatal — dashboard already rendered */ });
           return;
         }
         // Artist fetch failed but we have cached analysis — use fallback artist shape
