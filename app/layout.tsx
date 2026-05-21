@@ -8,18 +8,16 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+// Icons are handled by the Next.js file convention — app/favicon.ico,
+// app/icon.png, app/apple-icon.png. Next auto-injects content-hashed
+// <link> tags, so changing an icon busts the browser cache automatically.
+// Do NOT re-add a metadata.icons block or hard-coded <head> <link> tags —
+// duplicate/fixed-URL favicon definitions were causing the wrong icon to
+// stick in browser caches.
 export const metadata: Metadata = {
   title: "Helmos — Automated Chief Growth Officer for Music",
   description:
     "Automated Chief Growth Officer for Music. Paste your Spotify link and get a personalized action plan.",
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: "/apple-icon.png",
-  },
   openGraph: {
     title: "Helmos — Automated Chief Growth Officer for Music",
     description: "Automated Chief Growth Officer for Music.",
@@ -34,13 +32,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        {/* Hard-coded favicon — bypasses Next.js file-based routing cache */}
-        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-        <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
-        <link rel="apple-touch-icon" href="/apple-icon.png" />
-      </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
         <footer className="w-full text-center py-4 text-xs text-zinc-600">
