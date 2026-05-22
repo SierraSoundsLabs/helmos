@@ -29,9 +29,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing artist data" }, { status: 400 });
   }
 
-  // Cache key includes latest release so it auto-busts when a new song drops.
-  // Also write to a bare key (no release slug) so the dashboard's GET prefetch
-  // — which doesn't know the release name — can fast-return for returning users.
+  // Two cache keys, deliberately different lifetimes:
+  //
+  // - Versioned key (helm:analysis:{id}:{releaseSlug}) — 7-day TTL. Used by
+  //   POST below to decide whether to re-run the (slow, paid) Claude
+  //   analysis. The release slug makes it auto-bust when a new song drops.
+  //
+  // - Bare key (helm:analysis:{id}) — NO EXPIRY. This is the "last known
+  //   analysis" the dashboard reads on every load. It must never expire,
+  //   or returning users periodically hit the cold path and sit through
+  //   the 30-55s "Building your career plan…" screen. (That was the bug:
+  //   the bare key used to share the 7-day TTL, so every 7 days the first
+  //   returning user ate the full re-analysis.) The dashboard fires a
+  //   background POST after rendering, so this key still stays current.
   const latestSlug = artistData.latestRelease?.name
     ? artistData.latestRelease.name.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20)
     : "none";
@@ -40,8 +50,8 @@ export async function POST(request: NextRequest) {
   try {
     const cached = await kvGet(cacheKey);
     if (cached) {
-      // Refresh the bare-key copy so the dashboard prefetch keeps hitting
-      try { await kvSet(bareKey, cached, CACHE_TTL); } catch { /* non-fatal */ }
+      // Refresh the persistent bare-key copy (no TTL)
+      try { await kvSet(bareKey, cached); } catch { /* non-fatal */ }
       return NextResponse.json(cached);
     }
   } catch {
@@ -50,10 +60,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const analysis = await analyzeArtist(artistData);
-    // Cache under both the versioned key (for cache-busting) and the bare key
-    // (for the dashboard's prefetch path)
+    // Versioned key keeps the 7-day TTL; bare key is persistent (no TTL).
     try { await kvSet(cacheKey, analysis, CACHE_TTL); } catch { /* non-fatal */ }
-    try { await kvSet(bareKey, analysis, CACHE_TTL); } catch { /* non-fatal */ }
+    try { await kvSet(bareKey, analysis); } catch { /* non-fatal */ }
     return NextResponse.json(analysis);
   } catch (err) {
     console.error("Analysis error:", err);
