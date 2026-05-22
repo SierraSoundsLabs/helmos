@@ -2533,7 +2533,8 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
   );
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [sending, setSending] = useState(false);
-  const [sendResult, setSendResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [sendResult, setSendResult] = useState<{ sent: number; failed: number; skipped: number } | null>(null);
+  const [genNotice, setGenNotice] = useState<string | null>(null);
   const [history, setHistory] = useState<OutreachRecord[]>([]);
   const [inbox, setInbox] = useState<InboundEmail[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -2567,6 +2568,7 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
     setGenerating(true);
     setDrafts([]);
     setSendResult(null);
+    setGenNotice(null);
     try {
       const res = await fetch("/api/helm/outreach/generate", {
         method: "POST",
@@ -2581,6 +2583,12 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
       if (data.drafts) {
         setDrafts(data.drafts);
         setSelected(new Set(data.drafts.map((_: OutreachDraft, i: number) => i)));
+        const droppedUnverifiable = data.droppedUnverifiable ?? 0;
+        if (droppedUnverifiable > 0) {
+          setGenNotice(
+            `${droppedUnverifiable} suggested contact${droppedUnverifiable !== 1 ? "s were" : " was"} dropped — no verified email address could be found, so ${droppedUnverifiable !== 1 ? "they" : "it"} would have bounced.`
+          );
+        }
       }
     } catch (e) {
       console.error("Generate error:", e);
@@ -2619,7 +2627,7 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
         body: JSON.stringify({ artistId: artist.id, artistName: artist.name, drafts: toSend }),
       });
       const data = await res.json();
-      setSendResult({ sent: data.sent ?? 0, failed: data.failed ?? 0 });
+      setSendResult({ sent: data.sent ?? 0, failed: data.failed ?? 0, skipped: data.skipped ?? 0 });
       setDrafts([]);
       setSelected(new Set());
       // Refresh history
@@ -2778,11 +2786,19 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
           </div>
         )}
 
+        {/* Generate notice — contacts dropped for unverifiable emails */}
+        {genNotice && (
+          <div className="rounded-xl p-3 border text-xs font-medium bg-amber-500/10 border-amber-500/30 text-amber-400">
+            ⚠️ {genNotice}
+          </div>
+        )}
+
         {/* Send result */}
         {sendResult && (
           <div className={`rounded-xl p-4 border text-sm font-medium ${sendResult.sent > 0 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border-red-500/30 text-red-400"}`}>
             {sendResult.sent > 0 && `✓ ${sendResult.sent} email${sendResult.sent !== 1 ? "s" : ""} sent`}
             {sendResult.failed > 0 && ` · ${sendResult.failed} failed`}
+            {sendResult.skipped > 0 && ` · ${sendResult.skipped} skipped (unverifiable address — would have bounced)`}
           </div>
         )}
       </div>

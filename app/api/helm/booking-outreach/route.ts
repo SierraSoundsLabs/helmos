@@ -8,6 +8,7 @@ import type { SavedBio } from "@/app/api/helm/bio/route";
 import type { LiveShowProfile } from "@/app/api/helm/live-show-profile/route";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import { getBITPastEvents, getBITUpcomingEvents, formatShowHistory } from "@/lib/bandsintown";
+import { resolveDeliverableEmail } from "@/lib/hunter";
 
 import { TASK_DEFS } from "@/lib/tasks";
 import type { Task } from "@/lib/tasks";
@@ -176,9 +177,24 @@ Use real venues, real bands, and realistic emails. Return ONLY the JSON array.`;
     return NextResponse.json({ error: "Failed to research booking targets" }, { status: 500 });
   }
 
-  // Step 2: Send to all targets
-  const verifiedTargets = targets.slice(0, remaining);
+  // Step 2: verify deliverability, then send.
+  // The model GUESSES contact emails — resolve each through Hunter so we
+  // never send to a bouncing address (bounces waste outreach + hurt the
+  // helmos.co sending reputation). Targets whose address can't be resolved
+  // are surfaced to the user as "unverified" rather than silently bounced.
+  const candidates = targets.slice(0, remaining);
+  const verifiedTargets: typeof targets = [];
   const unverifiedTargets: typeof targets = [];
+  await Promise.all(
+    candidates.map(async (t) => {
+      const r = await resolveDeliverableEmail(t.contactName || t.name || "", t.email || "");
+      if (r) {
+        verifiedTargets.push({ ...t, email: r.email });
+      } else {
+        unverifiedTargets.push(t);
+      }
+    })
+  );
 
   let sent = 0;
   let failed = 0;

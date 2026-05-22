@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getSession } from "@/lib/session";
 import { sendEmail, artistEmail, toSlug } from "@/lib/email";
 import { kvGet, kvSet } from "@/lib/kv";
+import { isUndeliverable } from "@/lib/hunter";
 import type { OutreachDraft } from "@/app/api/helm/outreach/generate/route";
 
 export interface OutreachRecord extends OutreachDraft {
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest) {
 
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
+  const skippedAddresses: string[] = [];
 
   // Load existing IDs list
   const idsKey = `outreach-ids:${artistId}`;
@@ -60,6 +63,15 @@ export async function POST(req: NextRequest) {
   const newIds: string[] = [];
 
   for (const draft of toSend) {
+    // Final deliverability gate. Drafts from /outreach/generate are already
+    // Hunter-resolved, but this also covers chat-sourced or hand-edited
+    // drafts — never send to an address Hunter flags as a definite bounce.
+    if (await isUndeliverable(draft.to)) {
+      skipped++;
+      skippedAddresses.push(draft.to);
+      continue; // not sent, no KV record, doesn't consume daily quota
+    }
+
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const result = await sendEmail({
       from: fromDisplay,
@@ -93,7 +105,13 @@ export async function POST(req: NextRequest) {
   await kvSet(idsKey, [...existingIds, ...newIds]);
   await kvSet(countKey, currentCount + sent, 90000); // expire after ~25 hours
 
-  return new Response(JSON.stringify({ sent, failed, remaining: remaining - sent }), {
+  return new Response(JSON.stringify({
+    sent,
+    failed,
+    skipped,
+    skippedAddresses,
+    remaining: remaining - sent,
+  }), {
     headers: { "Content-Type": "application/json" },
   });
 }

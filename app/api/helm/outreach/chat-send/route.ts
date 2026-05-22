@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { sendEmail, artistEmail, toSlug } from "@/lib/email";
 import { kvGet, kvSet } from "@/lib/kv";
+import { isUndeliverable } from "@/lib/hunter";
 import type { ArtistData } from "@/lib/spotify";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import type { SavedBio } from "@/app/api/helm/bio/route";
@@ -34,6 +35,14 @@ export async function POST(req: NextRequest) {
   const MAX_PER_DAY = 10;
   if (currentCount >= MAX_PER_DAY) {
     return NextResponse.json({ error: "Daily limit of 10 emails reached" }, { status: 429 });
+  }
+
+  // Deliverability gate — don't generate or send to a definite-bounce address.
+  // Returns a `reason` (the chat handler surfaces it as a friendly warning).
+  if (await isUndeliverable(toEmail)) {
+    return NextResponse.json({
+      reason: `${toEmail} doesn't look like a deliverable address — the mailbox couldn't be verified, so I didn't send (it would bounce). Double-check the address, or use the Outreach tab to find a verified contact.`,
+    });
   }
 
   const slug = toSlug(artistData.name);

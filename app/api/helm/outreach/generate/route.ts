@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { toSlug, artistEmail } from "@/lib/email";
 import { kvGet } from "@/lib/kv";
+import { resolveDeliverableEmail } from "@/lib/hunter";
 import type { ArtistData } from "@/lib/spotify";
 import type { SavedBio } from "@/app/api/helm/bio/route";
 
@@ -153,7 +154,7 @@ Return ONLY the JSON array, no other text.`;
 
     // Belt-and-suspenders dedup in case the model still suggests
     // a contact that's already been reached out to.
-    const drafts = rawDrafts.filter((d) => {
+    const deduped = rawDrafts.filter((d) => {
       const email = (d.to || "").toLowerCase();
       const key = `${(d.toName || "").toLowerCase()}|${(d.toPublication || "").toLowerCase()}`;
       if (email && contactedEmails.has(email)) return false;
@@ -161,10 +162,25 @@ Return ONLY the JSON array, no other text.`;
       return true;
     });
 
+    // Resolve every address through Hunter.io — the model GUESSES emails,
+    // and unverified guesses hard-bounce (wasting outreach + hurting the
+    // helmos.co sending reputation). resolveDeliverableEmail verifies the
+    // guess, falls back to Hunter's email-finder (name + domain), and
+    // returns null when no deliverable address exists. Contacts with no
+    // resolvable address are dropped so they never reach the send path.
+    const resolved = await Promise.all(
+      deduped.map(async (d) => {
+        const r = await resolveDeliverableEmail(d.toName || "", d.to || "");
+        return r ? { ...d, to: r.email } : null;
+      })
+    );
+    const drafts = resolved.filter((d): d is OutreachDraft => d !== null);
+
     return new Response(JSON.stringify({
       drafts,
       fromEmail,
-      droppedDuplicates: rawDrafts.length - drafts.length,
+      droppedDuplicates: rawDrafts.length - deduped.length,
+      droppedUnverifiable: deduped.length - drafts.length,
     }), {
       headers: { "Content-Type": "application/json" },
     });
