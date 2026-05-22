@@ -92,6 +92,71 @@ export async function domainSearch(domain: string, limit = 5): Promise<{
   }
 }
 
+// Resolve an AI-suggested contact to a genuinely deliverable email address.
+//
+// Outreach drafts are produced by an LLM that GUESSES email addresses
+// ("realistic-email@publication.com") — most of those mailboxes don't exist
+// and the sends hard-bounce, which silently wastes outreach AND damages the
+// helmos.co sending reputation.
+//
+// Strategy:
+//   1. Verify the AI's guess as-is. If Hunter says it's fine, use it.
+//   2. If the guess is invalid, the AI usually still got the DOMAIN right
+//      (@stereogum.com) — so use Hunter's email-finder with the contact's
+//      name + that domain to get the real address.
+//   3. If neither works, return null so the caller drops the contact.
+//
+// Fails OPEN: if Hunter is unreachable / no API key, we return the original
+// address rather than blocking all outreach on a Hunter outage.
+export async function resolveDeliverableEmail(
+  fullName: string,
+  suggestedEmail: string
+): Promise<{ email: string; method: "verified" | "found" | "unchecked" } | null> {
+  if (!suggestedEmail || !suggestedEmail.includes("@")) return null;
+
+  const check = await verifyEmail(suggestedEmail);
+
+  // Hunter unavailable entirely — fail open, allow the original address.
+  if (check === null) return { email: suggestedEmail, method: "unchecked" };
+
+  // Confirmed-good — send the AI's guess as-is.
+  if (check.status === "valid") {
+    return { email: suggestedEmail, method: "verified" };
+  }
+
+  // Anything else — invalid, disposable, accept_all, unknown, webmail — the
+  // guess is NOT confirmed. "accept_all" is the sneaky one: the domain
+  // accepts every address at the SMTP handshake so Hunter can't confirm the
+  // mailbox, but a wrong local-part still bounces later. So for every
+  // non-valid status, try Hunter's email-finder to get the address Hunter
+  // actually has on file for this person — more trustworthy than an AI guess.
+  const domain = extractDomain(suggestedEmail);
+  if (domain && fullName.trim()) {
+    const [first, ...rest] = fullName.trim().split(/\s+/);
+    const found = await findEmail(first, rest.join(" "), domain);
+    if (found && found.score >= 70) {
+      const recheck = await verifyEmail(found.email);
+      if (!recheck || recheck.status !== "invalid") {
+        return { email: found.email, method: "found" };
+      }
+    }
+  }
+
+  // No better address found. Drop definite bounces; for accept_all / unknown
+  // (genuinely unverifiable by anyone) fall back to the guess as best-effort
+  // — skipping all catch-all domains would lose too many real publications.
+  if (check.status === "invalid" || check.status === "disposable") return null;
+  return { email: suggestedEmail, method: "unchecked" };
+}
+
+// Lightweight send-time gate: returns true if an address should NOT be
+// emailed (definite bounce risk). Fails OPEN on a Hunter outage.
+export async function isUndeliverable(email: string): Promise<boolean> {
+  const result = await verifyEmail(email);
+  if (!result) return false; // Hunter unavailable — don't block
+  return result.status === "invalid" || result.status === "disposable";
+}
+
 // Extract domain from a website URL or email
 export function extractDomain(urlOrEmail: string): string | null {
   try {
