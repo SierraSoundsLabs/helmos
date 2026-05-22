@@ -9,9 +9,31 @@ export async function generateMetadata({ params }: Props) {
   const { artistSlug } = await params;
   const data = await kvGet<OneSheetData>(`onesheet:${artistSlug}`);
   if (!data) return { title: "Artist Not Found" };
+
+  const canonical = `https://helmos.co/${artistSlug}`;
+  const description =
+    data.bio?.slice(0, 160).trim() ||
+    `${data.artistName} — listen, follow, and book. Live shows, latest releases, and links on Helm.`;
+  const image = data.photoUrl || undefined;
+
   return {
     title: `${data.artistName} — Helm`,
-    description: data.bio?.slice(0, 160) || `${data.artistName} artist profile`,
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title: `${data.artistName} — Helm`,
+      description,
+      url: canonical,
+      type: "profile",
+      siteName: "Helm",
+      images: image ? [{ url: image, alt: data.artistName }] : undefined,
+    },
+    twitter: {
+      card: image ? "summary_large_image" : "summary",
+      title: `${data.artistName} — Helm`,
+      description,
+      images: image ? [image] : undefined,
+    },
   };
 }
 
@@ -55,6 +77,60 @@ function SocialIcon({ platform }: { platform: string }) {
   return <span>{icons[platform] ?? "🔗"}</span>;
 }
 
+// ─── Structured data ──────────────────────────────────────────────────────────
+// JSON-LD lets Google show rich results (artist card, upcoming events, etc.)
+// for these pages. Each artist page emits one MusicGroup + one MusicEvent
+// per upcoming show.
+function buildStructuredData(data: OneSheetData, slug: string) {
+  const canonical = `https://helmos.co/${slug}`;
+  const sameAs = Object.values(data.socialLinks).filter(Boolean) as string[];
+
+  const musicGroup: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "MusicGroup",
+    name: data.artistName,
+    url: canonical,
+    description: data.bio || undefined,
+    image: data.photoUrl || undefined,
+    genre: data.genres?.length ? data.genres : undefined,
+    sameAs: sameAs.length ? sameAs : undefined,
+    email: data.bookingEmail || undefined,
+  };
+
+  const events =
+    (data.upcomingShows ?? []).map((show) => ({
+      "@context": "https://schema.org",
+      "@type": "MusicEvent",
+      name: `${data.artistName} at ${show.venue}`,
+      startDate: show.date,
+      eventStatus: "https://schema.org/EventScheduled",
+      eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+      location: {
+        "@type": "MusicVenue",
+        name: show.venue,
+        ...(show.city
+          ? { address: { "@type": "PostalAddress", addressLocality: show.city } }
+          : {}),
+      },
+      performer: {
+        "@type": "MusicGroup",
+        name: data.artistName,
+        url: canonical,
+      },
+      ...(show.ticketUrl
+        ? {
+            offers: {
+              "@type": "Offer",
+              url: show.ticketUrl,
+              availability: "https://schema.org/InStock",
+            },
+          }
+        : {}),
+    }));
+
+  return [musicGroup, ...events];
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default async function ArtistOneSheePage({ params }: Props) {
   const { artistSlug } = await params;
@@ -63,9 +139,19 @@ export default async function ArtistOneSheePage({ params }: Props) {
   if (!data) return <NotFound />;
 
   const socialEntries = Object.entries(data.socialLinks).filter(([, v]) => !!v) as [string, string][];
+  const structuredData = buildStructuredData(data, artistSlug);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
+      {/* JSON-LD for rich results (MusicGroup + MusicEvent per upcoming show) */}
+      {structuredData.map((entry, i) => (
+        <script
+          key={i}
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(entry) }}
+        />
+      ))}
       {/* Hero */}
       <div className="relative overflow-hidden">
         {/* Blurred background */}
