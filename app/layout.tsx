@@ -8,6 +8,12 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+// Icons are handled by the Next.js file convention — app/favicon.ico,
+// app/icon.png, app/apple-icon.png. Next auto-injects content-hashed
+// <link> tags, so changing an icon busts the browser cache automatically.
+// Do NOT re-add a metadata.icons block or hard-coded <head> <link> tags —
+// duplicate/fixed-URL favicon definitions were causing the wrong icon to
+// stick in browser caches.
 export const metadata: Metadata = {
   metadataBase: new URL("https://helmos.co"),
   title: {
@@ -27,14 +33,6 @@ export const metadata: Metadata = {
     "Spotify artist analytics",
     "indie music tools",
   ],
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: "/apple-icon.png",
-  },
   alternates: {
     canonical: "/",
   },
@@ -67,7 +65,7 @@ const ROOT_STRUCTURED_DATA = [
     name: "Helm",
     legalName: "Sierra Sounds LLC",
     url: "https://helmos.co",
-    logo: "https://helmos.co/icon-512.png",
+    logo: "https://helmos.co/icon.png",
   },
   {
     "@context": "https://schema.org",
@@ -85,12 +83,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Hard-coded favicon — bypasses Next.js file-based routing cache */}
-        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-        <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
-        <link rel="apple-touch-icon" href="/apple-icon.png" />
-        {/* Site-wide JSON-LD (Organization + WebSite) for rich results */}
+        {/* Site-wide JSON-LD (Organization + WebSite) for rich results.
+            Favicons are NOT here — handled by the app/ file convention. */}
         {ROOT_STRUCTURED_DATA.map((entry, i) => (
           <script
             key={i}
