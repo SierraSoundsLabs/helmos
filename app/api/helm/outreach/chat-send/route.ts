@@ -8,6 +8,10 @@ import type { ArtistData } from "@/lib/spotify";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import type { SavedBio } from "@/app/api/helm/bio/route";
 
+// Haiku draft (~5s) + one Hunter deliverability check (~1-8s). Headroom over
+// Vercel's ~15s default so a slow verify can't silently kill the send.
+export const maxDuration = 30;
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Generate and immediately send a targeted outreach email from chat context

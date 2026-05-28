@@ -7,6 +7,11 @@ import { discoverContactsForDomain, type DiscoveredContact } from "@/lib/hunter"
 import type { ArtistData } from "@/lib/spotify";
 import type { SavedBio } from "@/app/api/helm/bio/route";
 
+// This route makes 2 LLM calls + up to ~12 Hunter lookups. Without a raised
+// maxDuration it hit Vercel's ~15s default and died silently ("working…" then
+// nothing). Measured worst case is ~30s with the Haiku pitch call below.
+export const maxDuration = 60;
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export interface OutreachDraft {
@@ -172,9 +177,10 @@ Rules: only real outlets you are confident exist, with their real domains. Do NO
         discovered.push(c);
       }
     }
-    // Already ranked within outlet (relevant role + confidence). Take a
-    // healthy top slice to draft — gives the user real volume to choose from.
-    const top = discovered.slice(0, 15);
+    // Already ranked within outlet (relevant role + confidence). Draft the
+    // top 10 (matches the daily send cap). Kept modest so the pitch-writing
+    // LLM call stays well under the function timeout.
+    const top = discovered.slice(0, 10);
 
     if (top.length === 0) {
       return new Response(JSON.stringify({
@@ -205,9 +211,12 @@ ${top.map((c, i) => `${i}. ${c.name || "(generic inbox)"}${c.position ? ` — ${
 Return ONLY a JSON array, one object per contact IN THE SAME ORDER:
 [{ "i": 0, "subject": "...", "body": "..." }]`;
 
+    // Haiku for pitch-writing: ~17s for 8-10 short emails vs. ~70s on Sonnet.
+    // These are short templated pitches — Haiku quality is fine and the speed
+    // keeps us under the function timeout.
     const pitchMsg = await client.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 4000,
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 3500,
       messages: [{ role: "user", content: pitchPrompt }],
     });
     const pitchRaw = pitchMsg.content[0].type === "text" ? pitchMsg.content[0].text : "";
