@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { toSlug, artistEmail } from "@/lib/email";
 import { kvGet } from "@/lib/kv";
-import { resolveDeliverableEmail } from "@/lib/hunter";
+import { discoverContactsForDomain, type DiscoveredContact } from "@/lib/hunter";
 import type { ArtistData } from "@/lib/spotify";
 import type { SavedBio } from "@/app/api/helm/bio/route";
 
@@ -17,6 +17,66 @@ export interface OutreachDraft {
   subject: string;
   body: string;
   rationale: string;
+  confidence?: number; // Hunter confidence 0-100
+}
+
+// ── Missions ────────────────────────────────────────────────────────────────
+// A mission maps the user's goal to: what kind of OUTLETS to find, which
+// roles are relevant at those outlets, and what the pitch asks for. We name
+// outlets with the LLM (it's good at that) then discover real contacts via
+// Hunter — instead of letting the LLM hallucinate individual emails.
+interface MissionConfig {
+  label: string;
+  outletKind: string; // {genre} / {city} placeholders filled below
+  roleKeywords: string[];
+  defaultRole: string;
+  pitchGoal: string;
+  needsCity?: boolean;
+}
+
+const MISSIONS: Record<string, MissionConfig> = {
+  press: {
+    label: "Press",
+    outletKind: "music blogs, magazines, and online publications that review or cover {genre} artists",
+    roleKeywords: ["editor", "writer", "journalist", "contributor", "features", "news", "music", "pitches", "tips", "editorial", "contact"],
+    defaultRole: "Journalist",
+    pitchGoal: "pitch the artist's latest release for coverage, a feature, or a review",
+  },
+  playlist: {
+    label: "Playlists",
+    outletKind: "independent playlist curators, playlist networks, and music-discovery blogs that playlist {genre}",
+    roleKeywords: ["curator", "playlist", "a&r", "submissions", "music", "editor", "contact"],
+    defaultRole: "Playlist Curator",
+    pitchGoal: "pitch the artist's track for playlist consideration",
+  },
+  sync: {
+    label: "Sync / Licensing",
+    outletKind: "music supervision companies, sync agencies, and licensing libraries that place {genre} in film, TV, ads, or games",
+    roleKeywords: ["supervisor", "sync", "licensing", "creative", "a&r", "music", "contact"],
+    defaultRole: "Music Supervisor",
+    pitchGoal: "introduce the artist's catalog for sync/licensing placement",
+  },
+  radio: {
+    label: "Radio",
+    outletKind: "college, community, and independent radio stations that play {genre}",
+    roleKeywords: ["dj", "program", "music director", "host", "station", "radio", "submissions", "contact"],
+    defaultRole: "Radio DJ",
+    pitchGoal: "submit the artist's track for radio airplay consideration",
+  },
+  venue: {
+    label: "Venues",
+    outletKind: "real, currently-operating music venues in {city} that book {genre} artists at a comparable draw level (roughly 100-500 capacity)",
+    roleKeywords: ["booking", "talent", "buyer", "events", "programming", "promoter", "calendar", "info", "contact"],
+    defaultRole: "Venue / Talent Buyer",
+    pitchGoal: "pitch the artist to play a show at the venue",
+    needsCity: true,
+  },
+};
+
+interface OutletSuggestion {
+  outlet: string;
+  domain: string;
+  why?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -27,166 +87,158 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { artistData, count = 5, contactTypes }: {
+  const { artistData, mission = "press", city }: {
     artistData: ArtistData;
-    count?: number;
-    contactTypes?: string[];
+    mission?: string;
+    city?: string;
   } = await req.json();
+
   if (!artistData) {
     return new Response(JSON.stringify({ error: "artistData required" }), {
       status: 400, headers: { "Content-Type": "application/json" },
     });
   }
 
-  const safeCount = Math.min(Math.max(1, count), 10);
+  const cfg = MISSIONS[mission] ?? MISSIONS.press;
+  if (cfg.needsCity && !city?.trim()) {
+    return new Response(JSON.stringify({ error: "city required for this mission", needsCity: true }), {
+      status: 400, headers: { "Content-Type": "application/json" },
+    });
+  }
 
-  // Map UI contact-type ids to human-readable target descriptions for the prompt.
-  // Defaults to the original three if the caller didn't supply any.
-  const CONTACT_TYPE_LABELS: Record<string, string> = {
-    journalist:        "Music journalists / editors at blogs and publications covering this genre",
-    playlist_curator:  "Independent playlist curators on Spotify",
-    booking_agent:     "Booking agents who work with artists at this level",
-    ar:                "A&R reps at labels (independent and major) signing artists in this genre",
-    promoter:          "Local and regional show promoters who book this genre in venues 200-1000 cap",
-    music_supervisor:  "Music supervisors for sync licensing (film, TV, commercials, games)",
-    radio_dj:          "Radio DJs and program directors at college or independent stations",
-  };
-  const selectedTypes = (contactTypes && contactTypes.length > 0)
-    ? contactTypes.filter(t => CONTACT_TYPE_LABELS[t])
-    : ["journalist", "playlist_curator", "booking_agent"];
-  const targetDescriptions = selectedTypes
-    .map(t => `- ${CONTACT_TYPE_LABELS[t]}`)
-    .join("\n");
   const slug = toSlug(artistData.name);
   const fromEmail = artistEmail(slug);
+  const genre = (artistData.genres || [])[0] || "indie";
+  const outletKind = cfg.outletKind
+    .replace("{genre}", genre)
+    .replace("{city}", city?.trim() || "");
 
-  // Pull saved bio if available
-  const savedBio = await kvGet<SavedBio>(`helm:artist:${artistData.id}:bio`);
-  const bioSection = savedBio
-    ? `\n- Artist Bio (medium): ${savedBio.medium}`
-    : "";
-
-  const releaseList = (artistData.allReleases || []).slice(0, 8)
-    .map(r => `  - ${r.name} (${r.type}, ${r.releaseDate})`).join("\n");
-
-  const topTracks = (artistData.topTracks || []).slice(0, 5)
-    .map(t => t.name).join(", ");
-
-  // Task 5: pull past outreach so Claude doesn't suggest contacting the
-  // same person/publication twice.
-  interface PastOutreach { to?: string; toName?: string; toPublication?: string }
+  // Past contacts — never suggest someone already reached out to.
   const pastIds = (await kvGet<string[]>(`outreach-ids:${artistData.id}`)) ?? [];
   const pastRecords = (await Promise.all(
-    pastIds.map(id => kvGet<PastOutreach>(`outreach:${artistData.id}:${id}`))
-  )).filter((r): r is PastOutreach => r !== null);
-
+    pastIds.map((id) => kvGet<{ to?: string }>(`outreach:${artistData.id}:${id}`))
+  )).filter((r): r is { to?: string } => r !== null);
   const contactedEmails = new Set(
-    pastRecords.map(r => (r.to || "").toLowerCase()).filter(Boolean)
+    pastRecords.map((r) => (r.to || "").toLowerCase()).filter(Boolean)
   );
-  const contactedKeys = new Set(
-    pastRecords.map(r => `${(r.toName || "").toLowerCase()}|${(r.toPublication || "").toLowerCase()}`).filter(k => k !== "|")
-  );
-
-  // Surface up to the last 50 in the prompt — covers a typical artist's
-  // history without bloating tokens.
-  const avoidList = pastRecords
-    .slice(-50)
-    .map(r => `  - ${r.toName ?? "(unknown)"} at ${r.toPublication ?? "(no publication)"}${r.to ? ` <${r.to}>` : ""}`)
-    .join("\n");
-  const avoidSection = avoidList
-    ? `\n\nDO NOT INCLUDE any of these contacts — they have already been reached out to. Suggest different people/publications instead:\n${avoidList}\n`
-    : "";
-
-  const prompt = `You are a music industry outreach specialist. Given this artist's profile, identify ${safeCount} real outreach targets and write a personalized email for each.
-
-ARTIST PROFILE:
-- Name: ${artistData.name}
-- Email: ${fromEmail}
-- Genres: ${(artistData.genres || []).join(", ")}
-- Monthly Listeners: ${artistData.monthlyListenersFormatted || "—"}
-- Spotify Followers: ${artistData.spotifyFollowersFormatted || "—"}
-- Top Tracks: ${topTracks || "—"}
-- Recent Releases:
-${releaseList || "  No releases"}
-- Last Released: ${artistData.monthsAgoLastRelease != null ? `${artistData.monthsAgoLastRelease} months ago` : "Unknown"}${bioSection}
-
-TARGETS to identify — ONLY pick people who fit these categories the artist asked for:
-${targetDescriptions}
-
-For each target, write a short, personalized outreach email FROM ${fromEmail}. The email should:
-- Reference specific, real work the target has done (mention their real publication, playlist name, or booking history if applicable)
-- Connect the artist's music to why this target would care
-- Be concise (under 150 words)
-- Have a clear, specific ask
-- Sound human, not like a template${avoidSection}
-
-Return a JSON array with exactly ${safeCount} objects. Each object must have these fields:
-{
-  "to": "real-or-realistic-email@publication.com",
-  "toName": "Full Name",
-  "toRole": "Journalist" | "Playlist Curator" | "Booking Agent" | "A&R" | "Show Promoter" | "Music Supervisor" | "Radio DJ",
-  "toPublication": "Publication/Playlist/Agency Name",
-  "subject": "Email subject line",
-  "body": "Full email body text (plain text, no HTML)",
-  "rationale": "1-2 sentences: why this specific person is a good target for this artist"
-}
-
-Return ONLY the JSON array, no other text.`;
 
   try {
-    const message = await client.messages.create({
+    // ── Step 1: LLM names real outlets (it's reliable at this) ──────────────
+    const outletPrompt = `You are a music industry researcher. The artist "${artistData.name}" (genre: ${genre}) wants to reach ${outletKind}.
+
+Name up to 12 REAL, currently-active outlets that are a genuinely strong fit. For each, give its primary website domain (bare domain only, e.g. "stereogum.com" — no https, no path).
+
+Return ONLY a JSON array:
+[{ "outlet": "Outlet Name", "domain": "example.com", "why": "one-sentence fit reason" }]
+
+Rules: only real outlets you are confident exist, with their real domains. Do NOT invent outlets or domains. Better to return 6 real ones than 12 with guesses.`;
+
+    const outletMsg = await client.messages.create({
       model: "claude-sonnet-4-5",
-      max_tokens: 1200,
-      messages: [{ role: "user", content: prompt }],
+      max_tokens: 900,
+      messages: [{ role: "user", content: outletPrompt }],
     });
-
-    const raw = message.content[0].type === "text" ? message.content[0].text : "";
-
-    // Extract JSON from response
-    const jsonMatch = raw.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      return new Response(JSON.stringify({ error: "Failed to parse AI response" }), {
-        status: 500, headers: { "Content-Type": "application/json" },
+    const outletRaw = outletMsg.content[0].type === "text" ? outletMsg.content[0].text : "";
+    const outletJson = outletRaw.match(/\[[\s\S]*\]/);
+    if (!outletJson) {
+      return new Response(JSON.stringify({ error: "Could not identify outlets. Try again." }), {
+        status: 502, headers: { "Content-Type": "application/json" },
       });
     }
+    const outlets: OutletSuggestion[] = JSON.parse(outletJson[0]);
 
-    const rawDrafts: OutreachDraft[] = JSON.parse(jsonMatch[0]);
-
-    // Belt-and-suspenders dedup in case the model still suggests
-    // a contact that's already been reached out to.
-    const deduped = rawDrafts.filter((d) => {
-      const email = (d.to || "").toLowerCase();
-      const key = `${(d.toName || "").toLowerCase()}|${(d.toPublication || "").toLowerCase()}`;
-      if (email && contactedEmails.has(email)) return false;
-      if (key !== "|" && contactedKeys.has(key)) return false;
-      return true;
-    });
-
-    // Resolve every address through Hunter.io — the model GUESSES emails,
-    // and unverified guesses hard-bounce (wasting outreach + hurting the
-    // helmos.co sending reputation). resolveDeliverableEmail verifies the
-    // guess, falls back to Hunter's email-finder (name + domain), and
-    // returns null when no deliverable address exists. Contacts with no
-    // resolvable address are dropped so they never reach the send path.
-    const resolved = await Promise.all(
-      deduped.map(async (d) => {
-        const r = await resolveDeliverableEmail(d.toName || "", d.to || "");
-        return r ? { ...d, to: r.email } : null;
-      })
+    // ── Step 2: discover real contacts at each outlet domain via Hunter ─────
+    const perOutlet = await Promise.all(
+      outlets
+        .filter((o) => o.domain)
+        .map((o) =>
+          discoverContactsForDomain(
+            o.domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, ""),
+            o.outlet,
+            cfg.roleKeywords,
+            6
+          )
+        )
     );
-    const drafts = resolved.filter((d): d is OutreachDraft => d !== null);
+
+    // Flatten, dedupe (by email, and against past outreach), cap the list.
+    const seen = new Set<string>();
+    const discovered: DiscoveredContact[] = [];
+    for (const list of perOutlet) {
+      for (const c of list) {
+        const e = c.email.toLowerCase();
+        if (seen.has(e) || contactedEmails.has(e)) continue;
+        seen.add(e);
+        discovered.push(c);
+      }
+    }
+    // Already ranked within outlet (relevant role + confidence). Take a
+    // healthy top slice to draft — gives the user real volume to choose from.
+    const top = discovered.slice(0, 15);
+
+    if (top.length === 0) {
+      return new Response(JSON.stringify({
+        drafts: [],
+        fromEmail,
+        outletsSearched: outlets.length,
+        reason: `Searched ${outlets.length} ${cfg.label.toLowerCase()} outlets but couldn't find any verified contacts not already on your list. Try a different mission${cfg.needsCity ? " or city" : ""}.`,
+      }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // ── Step 3: LLM writes a personalized pitch per discovered contact ──────
+    const savedBio = await kvGet<SavedBio>(`helm:artist:${artistData.id}:bio`);
+    const topTracks = (artistData.topTracks || []).slice(0, 5).map((t) => t.name).join(", ");
+    const releaseList = (artistData.allReleases || []).slice(0, 5)
+      .map((r) => `${r.name} (${r.type}, ${r.releaseDate})`).join("; ");
+
+    const pitchPrompt = `You are writing outreach emails FROM ${artistData.name} <${fromEmail}>.
+
+ARTIST: ${artistData.name} | Genre: ${genre} | Monthly listeners: ${artistData.monthlyListenersFormatted || "—"} | Top tracks: ${topTracks || "—"} | Recent: ${releaseList || "—"}${savedBio ? `\nBio: ${savedBio.medium}` : ""}
+
+GOAL: ${cfg.pitchGoal}.
+
+Write one email per contact below. Each: under 150 words, specific and human (reference their outlet), one clear ask, no fluff. Address the person by first name if provided, otherwise greet the outlet professionally.
+
+CONTACTS:
+${top.map((c, i) => `${i}. ${c.name || "(generic inbox)"}${c.position ? ` — ${c.position}` : ""} at ${c.outlet} <${c.email}>`).join("\n")}
+
+Return ONLY a JSON array, one object per contact IN THE SAME ORDER:
+[{ "i": 0, "subject": "...", "body": "..." }]`;
+
+    const pitchMsg = await client.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 4000,
+      messages: [{ role: "user", content: pitchPrompt }],
+    });
+    const pitchRaw = pitchMsg.content[0].type === "text" ? pitchMsg.content[0].text : "";
+    const pitchJson = pitchRaw.match(/\[[\s\S]*\]/);
+    const pitches: { i: number; subject: string; body: string }[] = pitchJson ? JSON.parse(pitchJson[0]) : [];
+    const pitchByIndex = new Map(pitches.map((p) => [p.i, p]));
+
+    const drafts: OutreachDraft[] = top.map((c, i) => {
+      const p = pitchByIndex.get(i);
+      return {
+        to: c.email,
+        toName: c.name || c.outlet,
+        toRole: cfg.defaultRole,
+        toPublication: c.outlet,
+        subject: p?.subject || `${artistData.name} — ${cfg.label} outreach`,
+        body: p?.body || "",
+        rationale: c.position ? `${c.position} at ${c.outlet}` : `Contact at ${c.outlet}`,
+        confidence: c.confidence,
+      };
+    }).filter((d) => d.body.trim().length > 0);
 
     return new Response(JSON.stringify({
       drafts,
       fromEmail,
-      droppedDuplicates: rawDrafts.length - deduped.length,
-      droppedUnverifiable: deduped.length - drafts.length,
-    }), {
-      headers: { "Content-Type": "application/json" },
-    });
+      mission: cfg.label,
+      outletsSearched: outlets.length,
+      contactsFound: discovered.length,
+    }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
     console.error("Outreach generate error:", e);
-    return new Response(JSON.stringify({ error: "Generation failed" }), {
+    return new Response(JSON.stringify({ error: "Generation failed. Please try again." }), {
       status: 500, headers: { "Content-Type": "application/json" },
     });
   }

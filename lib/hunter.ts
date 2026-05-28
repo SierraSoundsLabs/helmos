@@ -92,6 +92,55 @@ export async function domainSearch(domain: string, limit = 5): Promise<{
   }
 }
 
+export interface DiscoveredContact {
+  email: string;
+  name: string;          // "First Last" or "" if generic inbox
+  position: string;      // job title or ""
+  confidence: number;    // Hunter 0-100
+  outlet: string;        // the outlet/venue this came from (caller-supplied)
+  domain: string;
+}
+
+// Discover real contacts at an outlet/venue domain via Hunter domain-search.
+// This is the discovery primitive for mission-based outreach: instead of
+// asking an LLM to GUESS who works where (it hallucinates), we name the
+// outlet and let Hunter return the people it has actually crawled + scored.
+//
+// `roleKeywords` ranks relevance (e.g. "editor","booking") — matching
+// contacts sort first, but generic inboxes (booking@, pitches@) are kept
+// too since those are often the right target for cold outreach.
+export async function discoverContactsForDomain(
+  domain: string,
+  outlet: string,
+  roleKeywords: string[],
+  limit = 10
+): Promise<DiscoveredContact[]> {
+  const raw = await domainSearch(domain, limit);
+  const kws = roleKeywords.map((k) => k.toLowerCase());
+  const scored = raw.map((c) => {
+    const hay = `${(c.position || "").toLowerCase()} ${c.email.split("@")[0].toLowerCase()}`;
+    const relevant = kws.some((k) => hay.includes(k));
+    return {
+      contact: {
+        email: c.email,
+        name: [c.firstName, c.lastName].filter(Boolean).join(" "),
+        position: c.position || "",
+        confidence: c.confidence ?? 0,
+        outlet,
+        domain,
+      } as DiscoveredContact,
+      relevant,
+    };
+  });
+  // Relevant roles first, then by confidence.
+  return scored
+    .sort((a, b) => {
+      if (a.relevant !== b.relevant) return a.relevant ? -1 : 1;
+      return b.contact.confidence - a.contact.confidence;
+    })
+    .map((s) => s.contact);
+}
+
 // Resolve an AI-suggested contact to a genuinely deliverable email address.
 //
 // Outreach drafts are produced by an LLM that GUESSES email addresses
