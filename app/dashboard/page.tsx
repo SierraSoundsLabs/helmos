@@ -2307,14 +2307,14 @@ function LinksTab({
 
 
 // ─── OUTREACH TAB ─────────────────────────────────────────────────────────────
-const CONTACT_TYPE_OPTIONS: { id: string; label: string }[] = [
-  { id: "journalist",       label: "Journalists / Editors" },
-  { id: "playlist_curator", label: "Playlist Curators" },
-  { id: "booking_agent",    label: "Booking Agents" },
-  { id: "ar",               label: "A&R" },
-  { id: "promoter",         label: "Local Show Promoters" },
-  { id: "music_supervisor", label: "Music Supervisors (Sync)" },
-  { id: "radio_dj",         label: "Radio DJs / Program Directors" },
+// Mission-based outreach: pick a goal, Helm names real outlets and pulls
+// verified contacts via Hunter, then drafts a pitch for each.
+const OUTREACH_MISSIONS: { id: string; emoji: string; label: string; sub: string; needsCity?: boolean }[] = [
+  { id: "press",    emoji: "📰", label: "Pitch press",    sub: "Journalists & blogs for your latest release" },
+  { id: "playlist", emoji: "🎧", label: "Get playlisted", sub: "Independent playlist curators in your genre" },
+  { id: "venue",    emoji: "🎤", label: "Book shows",     sub: "Venues & talent buyers in a city", needsCity: true },
+  { id: "radio",    emoji: "📻", label: "Radio",          sub: "College & indie station DJs" },
+  { id: "sync",     emoji: "🎬", label: "Sync / licensing", sub: "Music supervisors for film/TV/ads" },
 ];
 
 // ── UpcomingShowsCard ────────────────────────────────────────────────────────
@@ -2528,9 +2528,8 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
-  const [contactTypes, setContactTypes] = useState<Set<string>>(
-    new Set(["journalist", "playlist_curator", "booking_agent"])
-  );
+  const [mission, setMission] = useState<string>("press");
+  const [city, setCity] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number; skipped: number } | null>(null);
@@ -2562,9 +2561,14 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleGenerate = async (count: number) => {
+  const selectedMission = OUTREACH_MISSIONS.find(m => m.id === mission);
+
+  const handleGenerate = async () => {
     if (!isPaid) { onSubscribe(); return; }
-    if (contactTypes.size === 0) return; // button is disabled in this state
+    if (selectedMission?.needsCity && !city.trim()) {
+      setGenNotice("Enter a city for the venue search.");
+      return;
+    }
     setGenerating(true);
     setDrafts([]);
     setSendResult(null);
@@ -2575,35 +2579,31 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           artistData: artist,
-          count,
-          contactTypes: Array.from(contactTypes),
+          mission,
+          city: city.trim() || undefined,
         }),
       });
       const data = await res.json();
-      if (data.drafts) {
+      if (Array.isArray(data.drafts) && data.drafts.length > 0) {
         setDrafts(data.drafts);
         setSelected(new Set(data.drafts.map((_: OutreachDraft, i: number) => i)));
-        const droppedUnverifiable = data.droppedUnverifiable ?? 0;
-        if (droppedUnverifiable > 0) {
-          setGenNotice(
-            `${droppedUnverifiable} suggested contact${droppedUnverifiable !== 1 ? "s were" : " was"} dropped — no verified email address could be found, so ${droppedUnverifiable !== 1 ? "they" : "it"} would have bounced.`
-          );
-        }
+        setGenNotice(
+          `Found ${data.contactsFound ?? data.drafts.length} verified contact${(data.contactsFound ?? data.drafts.length) !== 1 ? "s" : ""} across ${data.outletsSearched ?? "several"} outlets — review and send below.`
+        );
+      } else {
+        // Issue 2: never silently do nothing — always explain.
+        setGenNotice(
+          data.reason ||
+          data.error ||
+          `No verified contacts found for this mission${selectedMission?.needsCity ? ` in ${city.trim()}` : ""}. Try a different mission${selectedMission?.needsCity ? " or city" : ""}.`
+        );
       }
     } catch (e) {
       console.error("Generate error:", e);
+      setGenNotice("Outreach research failed — please try again.");
     } finally {
       setGenerating(false);
     }
-  };
-
-  const toggleContactType = (id: string) => {
-    setContactTypes(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   };
 
   const toggleSelect = (i: number) => {
@@ -2727,48 +2727,52 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
         <p className="text-xs text-zinc-500 mt-2">Outreach is sent from this address. Replies arrive in your inbox below.</p>
       </div>
 
-      {/* Generate section */}
+      {/* Generate section — mission picker */}
       <div className="flex flex-col gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-white mb-1">Generate Outreach</h2>
-          <p className="text-xs text-zinc-500">Pick who Helm should reach out to, then pick how many emails to draft. Up to 10 per day.</p>
+          <h2 className="text-sm font-semibold text-white mb-1">Start an Outreach Mission</h2>
+          <p className="text-xs text-zinc-500">Pick a goal — Helm finds real, verified contacts and drafts a pitch for each. You review before anything sends. Up to 10 sends/day.</p>
         </div>
 
-        {/* Contact-type multi-select */}
-        <div>
-          <p className="text-xs text-zinc-400 mb-2">What types of contacts do you want to reach?</p>
-          <div className="flex gap-1.5 flex-wrap">
-            {CONTACT_TYPE_OPTIONS.map(opt => {
-              const active = contactTypes.has(opt.id);
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => toggleContactType(opt.id)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? "bg-[#6366f1] border-[#6366f1] text-white" : "bg-[#111] border-[#1e1e1e] text-zinc-400 hover:border-[#2e2e2e]"}`}
-                >
-                  {active ? "✓ " : ""}{opt.label}
-                </button>
-              );
-            })}
-          </div>
-          {contactTypes.size === 0 && (
-            <p className="text-xs text-red-400 mt-2">Pick at least one contact type to generate.</p>
-          )}
+        {/* Mission cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {OUTREACH_MISSIONS.map(m => {
+            const active = mission === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setMission(m.id)}
+                className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-colors ${active ? "bg-[#6366f1]/10 border-[#6366f1]/60" : "bg-[#111] border-[#1e1e1e] hover:border-[#2e2e2e]"}`}
+              >
+                <span className="text-lg shrink-0">{m.emoji}</span>
+                <div className="min-w-0">
+                  <div className={`text-xs font-semibold ${active ? "text-white" : "text-zinc-300"}`}>{m.label}</div>
+                  <div className="text-[11px] text-zinc-500 leading-snug">{m.sub}</div>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
-        <div className="flex gap-2 flex-wrap">
-          {[3, 5, 10].map(n => (
-            <button
-              key={n}
-              onClick={() => handleGenerate(n)}
-              disabled={generating || contactTypes.size === 0}
-              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {generating ? "Researching…" : `Generate ${n} Emails →`}
-            </button>
-          ))}
-        </div>
+        {/* City input for venue mission */}
+        {selectedMission?.needsCity && (
+          <input
+            type="text"
+            value={city}
+            onChange={e => setCity(e.target.value)}
+            placeholder="Which city? (e.g. Brooklyn, NY)"
+            className="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-[#6366f1]/50"
+          />
+        )}
+
+        <button
+          onClick={handleGenerate}
+          disabled={generating}
+          className="self-start px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {generating ? "Researching…" : `Find ${selectedMission?.label ?? ""} Contacts →`}
+        </button>
 
         {/* Generating state */}
         {generating && (
@@ -2786,10 +2790,11 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
           </div>
         )}
 
-        {/* Generate notice — contacts dropped for unverifiable emails */}
+        {/* Generate notice — discovery result or empty-state explanation.
+            Never let generate "do nothing silently" (issue 2). */}
         {genNotice && (
-          <div className="rounded-xl p-3 border text-xs font-medium bg-amber-500/10 border-amber-500/30 text-amber-400">
-            ⚠️ {genNotice}
+          <div className="rounded-xl p-3 border text-xs font-medium bg-[#6366f1]/10 border-[#6366f1]/30 text-[#a5b4fc]">
+            {genNotice}
           </div>
         )}
 
@@ -2829,6 +2834,15 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
                       </span>
                       {draft.toPublication && (
                         <span className="text-[11px] text-zinc-500">{draft.toPublication}</span>
+                      )}
+                      {typeof draft.confidence === "number" && (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                          draft.confidence >= 90 ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : draft.confidence >= 70 ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                          : "bg-zinc-700/40 text-zinc-400 border-zinc-600/30"
+                        }`} title="Hunter.io deliverability confidence">
+                          {draft.confidence >= 90 ? "High" : draft.confidence >= 70 ? "Medium" : "Risky"} · {draft.confidence}%
+                        </span>
                       )}
                     </div>
                     <p className="text-xs text-zinc-500 mb-2 italic">{draft.rationale}</p>
