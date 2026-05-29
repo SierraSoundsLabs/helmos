@@ -13,6 +13,11 @@ import { resolveDeliverableEmail } from "@/lib/hunter";
 import { TASK_DEFS } from "@/lib/tasks";
 import type { Task } from "@/lib/tasks";
 
+// Sonnet research call (~35s) + per-target Hunter verification + sends can
+// total ~60s. Without a raised maxDuration this hit Vercel's ~15s default and
+// died — the chat showed "Helm is working" but the task never completed.
+export const maxDuration = 120;
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export interface BookingTarget {
