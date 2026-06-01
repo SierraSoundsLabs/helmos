@@ -24,7 +24,7 @@ export default function TermsPage() {
         <Body>
           <H2>1. Who we are</H2>
           <P>
-            Helm (the &ldquo;Service&rdquo; or &ldquo;Helm&rdquo;) is operated by <strong>Sierra Sounds LLC</strong> (&ldquo;Sierra Sounds,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; &ldquo;our&rdquo;). The Service includes the website at <Code>helmos.co</Code> and any related apps, APIs, or pages we host.
+            Helm is a service offered by <strong>Sierra Sounds LLC, doing business as Helm</strong> (&ldquo;Sierra Sounds,&rdquo; &ldquo;Helm,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; &ldquo;our&rdquo;). The Service includes the website at <Code>helmos.co</Code> and any related apps, APIs, or pages we host.
           </P>
 
           <H2>2. Your agreement to these Terms</H2>

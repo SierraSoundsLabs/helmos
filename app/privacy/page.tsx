@@ -23,7 +23,7 @@ export default function PrivacyPage() {
 
         <Body>
           <P>
-            This Privacy Policy explains how <strong>Sierra Sounds LLC</strong> (&ldquo;Sierra Sounds,&rdquo; &ldquo;Helm,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo;) collects, uses, and shares information when you use <Code>helmos.co</Code> and related services (the &ldquo;Service&rdquo;).
+            This Privacy Policy explains how <strong>Sierra Sounds LLC, doing business as Helm</strong> (&ldquo;Sierra Sounds,&rdquo; &ldquo;Helm,&rdquo; &ldquo;we,&rdquo; &ldquo;us&rdquo;), collects, uses, and shares information when you use <Code>helmos.co</Code> and related services (the &ldquo;Service&rdquo;).
           </P>
 
           <H2>1. Information we collect</H2>
@@ -126,7 +126,7 @@ export default function PrivacyPage() {
           <H2>12. Contact</H2>
           <P>
             For privacy questions, requests, or complaints: <Email />.<br />
-            Sierra Sounds LLC operates Helm at <Code>helmos.co</Code>.
+            Sierra Sounds LLC, doing business as Helm, operates the Service at <Code>helmos.co</Code>.
           </P>
         </Body>
 
