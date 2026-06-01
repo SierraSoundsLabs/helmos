@@ -317,7 +317,9 @@ export async function fetchArtistData(artistId: string): Promise<ArtistData> {
     // Legacy compat
     followers: spotifyFollowers,
     monthlyListenersRaw: monthlyListeners,
-    spotifyPopularity: 0,
+    // Spotify's /v1/artists/{id} returns `popularity` as an integer 0-100.
+    // Was hardcoded to 0 — UI rendered "Spotify 0/100" on every artist.
+    spotifyPopularity: typeof artist.popularity === "number" ? artist.popularity : 0,
     weeklyListeners: monthlyListeners,
     weeklyListenersFormatted: monthlyListeners > 0 ? formatNumber(monthlyListeners) : "—",
     totalScrobbles: 0,

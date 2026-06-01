@@ -12,6 +12,14 @@ import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import type { InboundEmail } from "@/app/api/helm/outreach/webhook/route";
 import { toSlug, artistEmail } from "@/lib/email";
 
+// Booking Intel prototype imports
+import dynamic from "next/dynamic";
+import "leaflet/dist/leaflet.css";
+import BookingIntelTab from "@/components/BookingIntelTab";
+
+// Dynamically import map to avoid SSR issues with Leaflet
+const BookingMap = dynamic(() => import("@/components/BookingMap"), { ssr: false });
+
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const STRIPE_PRICE = "price_1TEhpZAq0rXznfHsHbKsyttZ"; // Helmos Pro $29/mo
 
@@ -1029,10 +1037,16 @@ function OverviewTab({
               <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Career Stage</p>
               <p className={`text-2xl font-bold ${stageConf.color}`}>{stage}</p>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] text-zinc-500 mb-1">Momentum</p>
-              <Sparkline popularity={artistData.spotifyPopularity} />
-            </div>
+            {/* Sparkline removed: Spotify restricted client-credentials access
+                to the popularity field, so the chart was rendering meaningless
+                values. Will restore once we have Chartmetric or a real
+                stat-history source wired in. */}
+            {artistData.spotifyPopularity > 0 && (
+              <div className="text-right">
+                <p className="text-[10px] text-zinc-500 mb-1">Momentum</p>
+                <Sparkline popularity={artistData.spotifyPopularity} />
+              </div>
+            )}
           </div>
           <div className="h-1.5 bg-[#1e1e1e] rounded-full overflow-hidden">
             <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${stageConf.pct}%`, background: stageConf.bar }} />
@@ -3370,14 +3384,17 @@ function DashboardContent() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [phase, setPhase] = useState<"loading-artist" | "loading-analysis" | "done" | "error">("loading-artist");
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools">(() => {
-    // Honor ?tab= query param from email-notification deep-links
+  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools" | "booking-intel">("overview");
+
+  // Honor ?tab= query param (client only)
+  React.useEffect(() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search).get("tab");
-      if (p === "outreach" || p === "works" || p === "release" || p === "links" || p === "ai-tools") return p;
+      if (p === "outreach" || p === "works" || p === "release" || p === "links" || p === "ai-tools" || p === "booking-intel") {
+        setActiveTab(p as any);
+      }
     }
-    return "overview";
-  });
+  }, []);
   const chatPanelRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
 
   // Switch to overview tab and scroll chat panel into view
@@ -4064,12 +4081,13 @@ function DashboardContent() {
   }
 
   const TABS = [
-    { id: "overview",  label: "Overview" },
-    { id: "works",     label: `Works & Recordings (${artistData.allReleases.length})` },
-    { id: "release",   label: "Release Marketing" },
-    { id: "links",     label: "🔗 Links" },
-    { id: "outreach",  label: "📧 Outreach" },
-    { id: "ai-tools",  label: "✨ AI Tools" },
+    { id: "overview",      label: "Overview" },
+    { id: "works",         label: `Works & Recordings (${artistData.allReleases.length})` },
+    { id: "release",       label: "Release Marketing" },
+    { id: "links",         label: "🔗 Links" },
+    { id: "outreach",      label: "📧 Outreach" },
+    { id: "booking-intel", label: "🎯 Booking Intel" },
+    { id: "ai-tools",      label: "✨ AI Tools" },
   ] as const;
 
   return (
@@ -4171,8 +4189,12 @@ function DashboardContent() {
                 ))}
                 <span className="text-[11px] text-zinc-600">·</span>
                 <span className="text-[11px] text-zinc-500">{artistData.monthlyListeners} listeners</span>
-                <span className="text-[11px] text-zinc-600">·</span>
-                <span className="text-[11px] text-zinc-500">Spotify {artistData.spotifyPopularity}/100</span>
+                {artistData.spotifyPopularity > 0 && (
+                  <>
+                    <span className="text-[11px] text-zinc-600">·</span>
+                    <span className="text-[11px] text-zinc-500">Spotify {artistData.spotifyPopularity}/100</span>
+                  </>
+                )}
               </div>
             </div>
             {artistData.topSong && (
@@ -4312,6 +4334,9 @@ function DashboardContent() {
             isPaid={isPaid}
             onSubscribe={handleSubscribe}
           />
+        )}
+        {mode !== "queue" && activeTab === "booking-intel" && (
+          <BookingIntelTab artist={artistData} isPaid={isPaid} onSubscribe={handleSubscribe} />
         )}
         {mode !== "queue" && activeTab === "ai-tools" && (
           <AIToolsTab artist={artistData} />
