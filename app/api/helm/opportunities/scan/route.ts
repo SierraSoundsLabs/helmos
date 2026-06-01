@@ -10,6 +10,9 @@ import {
 } from "@/lib/tasks";
 import type { OpportunityTask, OpportunityType } from "@/lib/types";
 
+
+// Safety cap: Claude calls in this route can exceed Vercel's ~15s default.
+export const maxDuration = 60;
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const ALL_TYPES: OpportunityType[] = ["festival", "playlist", "press", "tiktok_growth", "sync"];

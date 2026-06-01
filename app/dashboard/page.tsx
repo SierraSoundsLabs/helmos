@@ -12,6 +12,14 @@ import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import type { InboundEmail } from "@/app/api/helm/outreach/webhook/route";
 import { toSlug, artistEmail } from "@/lib/email";
 
+// Booking Intel prototype imports
+import dynamic from "next/dynamic";
+import "leaflet/dist/leaflet.css";
+import BookingIntelTab from "@/components/BookingIntelTab";
+
+// Dynamically import map to avoid SSR issues with Leaflet
+const BookingMap = dynamic(() => import("@/components/BookingMap"), { ssr: false });
+
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const STRIPE_PRICE = "price_1TEhpZAq0rXznfHsHbKsyttZ"; // Helmos Pro $29/mo
 
@@ -804,7 +812,7 @@ function PaidMediaModal({
 
 // ─── HELM CHAT (PAID) ─────────────────────────────────────────────────────────
 function HelmChat({
-  artistData, messages, onSend, isStreaming, isWaitingForUser, hasBio, hasOneSheet,
+  artistData, messages, onSend, isStreaming, isWaitingForUser, hasBio, hasOneSheet, onOpenOutreachMission,
 }: {
   artistData: ArtistData;
   messages: ChatMessage[];
@@ -813,6 +821,7 @@ function HelmChat({
   isWaitingForUser?: boolean;
   hasBio?: boolean;
   hasOneSheet?: boolean;
+  onOpenOutreachMission?: (mission: string) => void;
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -883,10 +892,14 @@ function HelmChat({
                 !hasBio      && { emoji: "✍️", label: "Write my artist bio",         sub: "Interview-crafted, saves to Links",       msg: "Write my artist bio" },
                 !hasOneSheet && { emoji: "📄", label: "Make me a one-sheet",          sub: "For booking agents & press",              msg: "Generate and publish my artist one-sheet" },
                                { emoji: "📈", label: "How do I grow faster?",        sub: "Get a custom strategy for my career",     msg: `How do I grow faster as ${artistData.name}? Give me a specific strategy based on my stats.` },
-                               { emoji: "🎯", label: "Find playlist curators",        sub: "Curators who fit my genre",               msg: "Find 20 playlist curators who would be a good fit for my music" },
+                               // Deep-link into the Outreach tab's Playlists mission instead of just chat advice.
+                               { emoji: "🎯", label: "Find playlist curators",        sub: "Curators who fit my genre",               msg: "Find 20 playlist curators who would be a good fit for my music", mission: "playlist" },
                                { emoji: "💬", label: "What should I do this week?",  sub: "Your top 3 priorities right now",         msg: "What are the top 3 things I should focus on this week to grow my career?" },
-              ].filter((x): x is { emoji: string; label: string; sub: string; msg: string } => Boolean(x)).map(({ emoji, label, sub, msg }) => (
-                <button key={label} onClick={() => onSend(msg)}
+              ].filter((x): x is { emoji: string; label: string; sub: string; msg: string; mission?: string } => Boolean(x)).map(({ emoji, label, sub, msg, mission }) => (
+                <button key={label} onClick={() => {
+                  if (mission && onOpenOutreachMission) onOpenOutreachMission(mission);
+                  else onSend(msg);
+                }}
                   className="text-left bg-[#0d0d0d] hover:bg-[#161616] border border-[#1e1e1e] hover:border-[#6366f1]/40 rounded-xl px-4 py-3 transition-all group">
                   <div className="flex items-center gap-3">
                     <span className="text-base">{emoji}</span>
@@ -967,8 +980,125 @@ function HelmChat({
 }
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
+// ─── DAILY BRIEF CARD ─────────────────────────────────────────────────────────
+// The "good morning, here's what's happening" surface that makes Helm a
+// daily-habit product. Reads /api/helm/brief (assembled from KV: inbox,
+// outreach history, opportunities, one-sheet/bio state, upcoming shows)
+// and renders a short stat row + a single ranked "next action" CTA.
+interface BriefData {
+  unreadInboxCount: number;
+  sentToday: number;
+  openOpportunities: number;
+  lastOutreachAgeDays: number | null;
+  hasOneSheet: boolean;
+  hasBio: boolean;
+  upcomingShowsCount: number;
+  suggested: { label: string; detail: string; tab?: string; mission?: string };
+}
+
+function DailyBriefCard({
+  artistId, artistName, artistSlug, onOpenOutreachMission, onJumpToTab,
+}: {
+  artistId: string;
+  artistName: string;
+  artistSlug: string;
+  onOpenOutreachMission?: (mission: string) => void;
+  onJumpToTab?: (tab: string) => void;
+}) {
+  const [brief, setBrief] = useState<BriefData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/helm/brief?artistId=${encodeURIComponent(artistId)}&artistSlug=${encodeURIComponent(artistSlug)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d) setBrief(d); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [artistId, artistSlug]);
+
+  // Time-aware greeting (client-local).
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 5) return "Hey night owl";
+    if (h < 12) return "Good morning";
+    if (h < 18) return "Good afternoon";
+    return "Good evening";
+  })();
+
+  const handleAction = () => {
+    if (!brief) return;
+    const s = brief.suggested;
+    if (s.mission && onOpenOutreachMission) onOpenOutreachMission(s.mission);
+    else if (s.tab && onJumpToTab) onJumpToTab(s.tab);
+  };
+
+  // Render a slim shimmer while loading so the page doesn't jump.
+  if (loading) {
+    return (
+      <div className="bg-gradient-to-br from-[#6366f1]/10 to-[#8b5cf6]/5 border border-[#6366f1]/20 rounded-2xl p-5 animate-pulse">
+        <div className="h-4 w-48 bg-[#1a1a1a] rounded mb-3" />
+        <div className="h-3 w-72 bg-[#1a1a1a] rounded" />
+      </div>
+    );
+  }
+  if (!brief) return null;
+
+  // Stat chips — only show non-zero / meaningful ones.
+  const chips: { label: string; tone: "info" | "warn" | "ok" }[] = [];
+  if (brief.unreadInboxCount > 0) chips.push({ label: `${brief.unreadInboxCount} unread`, tone: "warn" });
+  if (brief.sentToday > 0) chips.push({ label: `${brief.sentToday} sent today`, tone: "ok" });
+  if (brief.openOpportunities > 0) chips.push({ label: `${brief.openOpportunities} new opportunities`, tone: "info" });
+  if (brief.upcomingShowsCount > 0) chips.push({ label: `${brief.upcomingShowsCount} upcoming show${brief.upcomingShowsCount === 1 ? "" : "s"}`, tone: "info" });
+  if (brief.lastOutreachAgeDays !== null && brief.lastOutreachAgeDays >= 7) {
+    chips.push({ label: `${brief.lastOutreachAgeDays}d since last outreach`, tone: "warn" });
+  }
+
+  return (
+    <div className="bg-gradient-to-br from-[#6366f1]/10 to-[#8b5cf6]/5 border border-[#6366f1]/25 rounded-2xl p-5 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] text-[#a5b4fc] font-semibold uppercase tracking-wider">Helm Daily Brief</p>
+          <p className="text-base sm:text-lg font-bold text-white mt-1">{greeting}, {artistName.split(" ")[0]}.</p>
+        </div>
+      </div>
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {chips.map(c => (
+            <span
+              key={c.label}
+              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                c.tone === "warn" ? "bg-amber-500/15 text-amber-300 border-amber-500/30" :
+                c.tone === "ok"   ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" :
+                                    "bg-[#6366f1]/15 text-[#a5b4fc] border-[#6366f1]/30"
+              }`}
+            >
+              {c.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-start gap-3 mt-1">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white">{brief.suggested.label}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">{brief.suggested.detail}</p>
+        </div>
+        <button
+          onClick={handleAction}
+          className="shrink-0 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
+        >
+          Do it →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function OverviewTab({
-  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks, chatPanelRef, hasBio, hasOneSheet,
+  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks, chatPanelRef, hasBio, hasOneSheet, onOpenOutreachMission, onJumpToTab,
 }: {
   artistData: ArtistData;
   analysis: AnalysisResult;
@@ -985,6 +1115,8 @@ function OverviewTab({
   chatPanelRef?: React.RefObject<HTMLDivElement>;
   hasBio?: boolean;
   hasOneSheet?: boolean;
+  onOpenOutreachMission?: (mission: string) => void;
+  onJumpToTab?: (tab: string) => void;
 }) {
   const stage = analysis.careerStage || "Emerging";
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
@@ -993,6 +1125,16 @@ function OverviewTab({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
       {/* Main content */}
       <div className="flex flex-col gap-6">
+        {/* Daily Brief — the ambient "what to do today" surface (paid only) */}
+        {isPaid && (
+          <DailyBriefCard
+            artistId={artistData.id}
+            artistName={artistData.name}
+            artistSlug={artistSlugFromName(artistData.name)}
+            onOpenOutreachMission={onOpenOutreachMission}
+            onJumpToTab={onJumpToTab}
+          />
+        )}
         {/* Tasks — real queue only */}
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -1029,10 +1171,16 @@ function OverviewTab({
               <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Career Stage</p>
               <p className={`text-2xl font-bold ${stageConf.color}`}>{stage}</p>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] text-zinc-500 mb-1">Momentum</p>
-              <Sparkline popularity={artistData.spotifyPopularity} />
-            </div>
+            {/* Sparkline removed: Spotify restricted client-credentials access
+                to the popularity field, so the chart was rendering meaningless
+                values. Will restore once we have Chartmetric or a real
+                stat-history source wired in. */}
+            {artistData.spotifyPopularity > 0 && (
+              <div className="text-right">
+                <p className="text-[10px] text-zinc-500 mb-1">Momentum</p>
+                <Sparkline popularity={artistData.spotifyPopularity} />
+              </div>
+            )}
           </div>
           <div className="h-1.5 bg-[#1e1e1e] rounded-full overflow-hidden">
             <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${stageConf.pct}%`, background: stageConf.bar }} />
@@ -1148,6 +1296,7 @@ function OverviewTab({
             isWaitingForUser={isChatWaitingForUser}
             hasBio={hasBio}
             hasOneSheet={hasOneSheet}
+            onOpenOutreachMission={onOpenOutreachMission}
           />
         ) : (
           // Pre-paid preview panel
@@ -1521,13 +1670,14 @@ function SoundExchangeAuditModal({
 
 // ─── WORKS & RECORDINGS TAB ──────────────────────────────────────────────────
 function WorksTab({
-  artist, isPaid, onSubscribe, onSendChat, onRoyaltyAudit,
+  artist, isPaid, onSubscribe, onSendChat, onRoyaltyAudit, onOpenOutreachMission,
 }: {
   artist: ArtistData;
   isPaid: boolean;
   onSubscribe: () => void;
   onSendChat: (text: string) => void;
   onRoyaltyAudit: () => void;
+  onOpenOutreachMission?: (mission: string) => void;
 }) {
   const releases = artist.allReleases || [];
   const [showSEAudit, setShowSEAudit] = React.useState(false);
@@ -1615,12 +1765,14 @@ function WorksTab({
       {/* Most recent release — expanded card with contextual tasks */}
       {releases.length > 0 && (() => {
         const latest = releases[0];
-        const releaseTasks = [
+        const releaseTasks: { icon: string; label: string; msg: string; mission?: string }[] = [
           { icon: "📰", label: "Press Release", msg: `Write a press release for ${artist.name}'s release "${latest.name}" (${latest.type}, ${latest.releaseDate}). Make it press-ready for music blogs and journalists.` },
           { icon: "🎵", label: "Playlist Pitch", msg: `Write a playlist curator pitch email for "${latest.name}" by ${artist.name}. Target curators in the ${(artist.genres||[])[0]||"indie"} space.` },
           { icon: "📱", label: "TikTok Strategy", msg: `Build a TikTok content strategy for ${artist.name}'s release "${latest.name}". Give me 10 hook ideas for the first 3 seconds and 5 TikTok trends to jump on.` },
-          { icon: "🎯", label: "Pitch Playlist Curators", msg: `Find 20 playlist curators in the ${(artist.genres||[])[0]||"indie"} space who would be a good fit for ${artist.name}'s release "${latest.name}". Include playlist names, follower counts, and how to submit.` },
-          { icon: "📧", label: "Pitch Journalists", msg: `Find 10 music journalists who cover ${(artist.genres||[])[0]||"indie"} music and write personalized pitch emails for ${artist.name}'s release "${latest.name}".` },
+          // Deep-link the "Pitch …" buttons into Outreach missions instead
+          // of asking the chat for advice that goes nowhere.
+          { icon: "🎯", label: "Pitch Playlist Curators", msg: "", mission: "playlist" },
+          { icon: "📧", label: "Pitch Journalists",        msg: "", mission: "press" },
         ];
         return (
           <div className="bg-[#111] border border-[#6366f1]/30 rounded-xl overflow-hidden">
@@ -1650,7 +1802,11 @@ function WorksTab({
                 {releaseTasks.map(task => (
                   <button
                     key={task.label}
-                    onClick={() => isPaid ? onSendChat(task.msg) : onSubscribe()}
+                    onClick={() => {
+                      if (!isPaid) { onSubscribe(); return; }
+                      if (task.mission && onOpenOutreachMission) onOpenOutreachMission(task.mission);
+                      else onSendChat(task.msg);
+                    }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-[#2e2e2e] text-zinc-300 hover:border-[#6366f1]/40 hover:text-white transition-all"
                   >
                     <span>{task.icon}</span> {task.label}
@@ -1700,25 +1856,28 @@ function WorksTab({
 
 // ─── RELEASE MARKETING TAB ───────────────────────────────────────────────────
 function ReleaseMarketingTab({
-  artist, isPaid, onSubscribe, onSendChat, hasBio,
+  artist, isPaid, onSubscribe, onSendChat, hasBio, onOpenOutreachMission,
 }: {
   artist: ArtistData;
   isPaid: boolean;
   onSubscribe: () => void;
   onSendChat: (text: string) => void;
   hasBio?: boolean;
+  onOpenOutreachMission?: (mission: string) => void;
 }) {
-  const allItems = [
+  // Items with `mission` deep-link into the Outreach tab's matching mission
+  // (real find-contacts + send) instead of firing a chat-advice message.
+  const allItems: { icon: string; title: string; desc: string; msg: string; mission?: string; hiddenWhen?: string }[] = [
     { icon: "✍️", title: "Create Artist Bio",         desc: "Interview-crafted bio in 3 lengths — saved to your Links tab",                                                          msg: "Write my artist bio", hiddenWhen: "hasBio" },
     { icon: "🔗", title: "Pre-Save Campaign",       desc: "Create a pre-save link and run fan engagement before release day",                                                          msg: "Help me set up a pre-save campaign for my next release. What platform should I use, how do I set it up, and how do I promote it to maximize pre-saves?" },
-    { icon: "📰", title: "Pitch Journalists",         desc: "Find real music journalists covering your genre and pitch your latest single or album",                                      msg: `Find 15 music journalists and editors who actively cover ${(artist.genres||[])[0]||"indie"} artists like ${artist.name}. For each journalist include: their name, publication, recent article they wrote, their email or contact method, and why ${artist.name}'s latest release is a fit for them. Then write a personalized pitch template I can use for each.` },
-    { icon: "📣", title: "Press & Playlist Outreach",desc: "Pitch 10 journalists and 50 playlist curators in your genre 4 weeks out",                                                      msg: `Build a press and playlist outreach plan for ${artist.name}. I need: 10 journalist targets, 50 playlist curator targets in the ${(artist.genres||[])[0]||"my"} genre, and a pitch template for each.` },
+    { icon: "📰", title: "Pitch Journalists",         desc: "Find real music journalists covering your genre and pitch your latest single or album",                                      msg: "", mission: "press" },
+    { icon: "📣", title: "Press & Playlist Outreach",desc: "Pitch 10 journalists and 50 playlist curators in your genre 4 weeks out",                                                      msg: "", mission: "press" },
     { icon: "📄", title: "Press Release",            desc: "Draft and distribute a press release to genre-specific music blogs",                                                          msg: `Write a press release for ${artist.name}'s most recent release and tell me how to distribute it to the right music blogs.` },
     { icon: "📱", title: "Social Content Plan",      desc: "30-day content calendar built around your release date and story",                                                            msg: `Build a 30-day social content calendar for ${artist.name} around a release campaign. Include post ideas, formats (Reels/TikTok/Story), and optimal posting times.` },
 
     { icon: "🎤", title: "Editorial Playlist Pitch", desc: `Submit to Spotify editorial for ${artist.name}'s next release`,                                                              msg: `Walk me through submitting ${artist.name}'s next release to Spotify editorial playlists. What do I need, when should I submit, and how do I write the pitch?` },
     { icon: "📺", title: "YouTube Premiere",         desc: "Set up a YouTube premiere + community post strategy",                                                                         msg: `Help me set up a YouTube premiere for ${artist.name}'s next release. What do I need to prepare, how do I build anticipation, and what community posts should I make?` },
-    { icon: "🎙️", title: "Podcast Pitch",            desc: "Find 10 music podcasts in your genre and pitch a story",                                                                     msg: `Find 10 music podcasts relevant to ${artist.name}'s genre (${(artist.genres||[])[0]||"indie music"}) and write a pitch template I can use to get featured.` },
+    { icon: "🎙️", title: "Podcast Pitch",            desc: "Find real music podcasts in your genre and pitch you as a guest",                                                            msg: "", mission: "podcast" },
   ];
   const items = allItems.filter(item => !(item.hiddenWhen === "hasBio" && hasBio));
 
@@ -1733,7 +1892,11 @@ function ReleaseMarketingTab({
         {items.map((item) => (
           <button
             key={item.title}
-            onClick={() => isPaid ? onSendChat(item.msg) : onSubscribe()}
+            onClick={() => {
+              if (!isPaid) { onSubscribe(); return; }
+              if (item.mission && onOpenOutreachMission) onOpenOutreachMission(item.mission);
+              else onSendChat(item.msg);
+            }}
             className="flex items-start gap-3 p-4 bg-[#111] border border-[#1e1e1e] rounded-xl hover:border-[#6366f1]/40 hover:bg-[#12121a] transition-all text-left"
           >
             <span className="text-xl shrink-0">{item.icon}</span>
@@ -2310,11 +2473,12 @@ function LinksTab({
 // Mission-based outreach: pick a goal, Helm names real outlets and pulls
 // verified contacts via Hunter, then drafts a pitch for each.
 const OUTREACH_MISSIONS: { id: string; emoji: string; label: string; sub: string; needsCity?: boolean }[] = [
-  { id: "press",    emoji: "📰", label: "Pitch press",    sub: "Journalists & blogs for your latest release" },
-  { id: "playlist", emoji: "🎧", label: "Get playlisted", sub: "Independent playlist curators in your genre" },
-  { id: "venue",    emoji: "🎤", label: "Book shows",     sub: "Venues & talent buyers in a city", needsCity: true },
-  { id: "radio",    emoji: "📻", label: "Radio",          sub: "College & indie station DJs" },
+  { id: "press",    emoji: "📰", label: "Pitch press",      sub: "Journalists & blogs for your latest release" },
+  { id: "playlist", emoji: "🎧", label: "Get playlisted",   sub: "Independent playlist curators in your genre" },
+  { id: "venue",    emoji: "🎤", label: "Book shows",       sub: "Venues & talent buyers in a city", needsCity: true },
+  { id: "radio",    emoji: "📻", label: "Radio",            sub: "College & indie station DJs" },
   { id: "sync",     emoji: "🎬", label: "Sync / licensing", sub: "Music supervisors for film/TV/ads" },
+  { id: "podcast",  emoji: "🎙️", label: "Podcasts",         sub: "Music podcasts & interview shows" },
 ];
 
 // ── UpcomingShowsCard ────────────────────────────────────────────────────────
@@ -2529,6 +2693,14 @@ function OutreachTab({ artist, isPaid, onSubscribe }: {
   const [generating, setGenerating] = useState(false);
   const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
   const [mission, setMission] = useState<string>("press");
+  // Honors ?mission=X from the URL so buttons elsewhere in the app can
+  // deep-link straight into the right pre-selected mission (instead of
+  // just firing chat advice). useEffect rather than useState initializer
+  // so SSR/static prerender doesn't trip on window access.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("mission");
+    if (p && OUTREACH_MISSIONS.some(m => m.id === p)) setMission(p);
+  }, []);
   const [city, setCity] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [sending, setSending] = useState(false);
@@ -3370,14 +3542,17 @@ function DashboardContent() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [phase, setPhase] = useState<"loading-artist" | "loading-analysis" | "done" | "error">("loading-artist");
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools">(() => {
-    // Honor ?tab= query param from email-notification deep-links
+  const [activeTab, setActiveTab] = useState<"overview" | "works" | "release" | "links" | "outreach" | "ai-tools" | "booking-intel">("overview");
+
+  // Honor ?tab= query param (client only)
+  React.useEffect(() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search).get("tab");
-      if (p === "outreach" || p === "works" || p === "release" || p === "links" || p === "ai-tools") return p;
+      if (p === "outreach" || p === "works" || p === "release" || p === "links" || p === "ai-tools" || p === "booking-intel") {
+        setActiveTab(p as any);
+      }
     }
-    return "overview";
-  });
+  }, []);
   const chatPanelRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
 
   // Switch to overview tab and scroll chat panel into view
@@ -3386,6 +3561,33 @@ function DashboardContent() {
     setTimeout(() => {
       chatPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 80);
+  }, []);
+
+  // Deep-link from any "advice"-style button into the Outreach tab with a
+  // specific mission pre-selected. Updates the URL so OutreachTab (which
+  // unmounts/remounts between tabs) picks the mission up on mount, and
+  // switches the tab so the mount happens immediately.
+  const openOutreachMission = useCallback((missionId: string) => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", "outreach");
+      url.searchParams.set("mission", missionId);
+      window.history.replaceState({}, "", url.toString());
+    }
+    setActiveTab("outreach");
+  }, []);
+
+  // Generic tab-jump used by the Daily Brief card's "next action" CTAs.
+  const goToTab = useCallback((tab: string) => {
+    const allowed = ["overview", "works", "release", "links", "outreach", "ai-tools", "booking-intel"];
+    if (!allowed.includes(tab)) return;
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tab);
+      url.searchParams.delete("mission");
+      window.history.replaceState({}, "", url.toString());
+    }
+    setActiveTab(tab as "overview" | "works" | "release" | "links" | "outreach" | "ai-tools" | "booking-intel");
   }, []);
 
   // Auth / paid state
@@ -4064,12 +4266,13 @@ function DashboardContent() {
   }
 
   const TABS = [
-    { id: "overview",  label: "Overview" },
-    { id: "works",     label: `Works & Recordings (${artistData.allReleases.length})` },
-    { id: "release",   label: "Release Marketing" },
-    { id: "links",     label: "🔗 Links" },
-    { id: "outreach",  label: "📧 Outreach" },
-    { id: "ai-tools",  label: "✨ AI Tools" },
+    { id: "overview",      label: "Overview" },
+    { id: "works",         label: `Works & Recordings (${artistData.allReleases.length})` },
+    { id: "release",       label: "Release Marketing" },
+    { id: "links",         label: "🔗 Links" },
+    { id: "outreach",      label: "📧 Outreach" },
+    { id: "booking-intel", label: "🎯 Booking Intel" },
+    { id: "ai-tools",      label: "✨ AI Tools" },
   ] as const;
 
   return (
@@ -4171,8 +4374,12 @@ function DashboardContent() {
                 ))}
                 <span className="text-[11px] text-zinc-600">·</span>
                 <span className="text-[11px] text-zinc-500">{artistData.monthlyListeners} listeners</span>
-                <span className="text-[11px] text-zinc-600">·</span>
-                <span className="text-[11px] text-zinc-500">Spotify {artistData.spotifyPopularity}/100</span>
+                {artistData.spotifyPopularity > 0 && (
+                  <>
+                    <span className="text-[11px] text-zinc-600">·</span>
+                    <span className="text-[11px] text-zinc-500">Spotify {artistData.spotifyPopularity}/100</span>
+                  </>
+                )}
               </div>
             </div>
             {artistData.topSong && (
@@ -4278,6 +4485,8 @@ function DashboardContent() {
             chatPanelRef={chatPanelRef}
             hasBio={hasSavedBio}
             hasOneSheet={hasOneSheet}
+            onOpenOutreachMission={openOutreachMission}
+            onJumpToTab={goToTab}
           />
         )}
         {mode !== "queue" && activeTab === "works" && (
@@ -4287,6 +4496,7 @@ function DashboardContent() {
             onSubscribe={handleSubscribe}
             onSendChat={(msg) => { handleSendChat(msg); }}
             onRoyaltyAudit={() => { handleRoyaltyAudit(); }}
+            onOpenOutreachMission={openOutreachMission}
           />
         )}
         {mode !== "queue" && activeTab === "release" && (
@@ -4296,6 +4506,7 @@ function DashboardContent() {
             onSubscribe={handleSubscribe}
             onSendChat={(msg) => { handleSendChat(msg); }}
             hasBio={hasSavedBio}
+            onOpenOutreachMission={openOutreachMission}
           />
         )}
         {mode !== "queue" && activeTab === "links" && (
@@ -4312,6 +4523,9 @@ function DashboardContent() {
             isPaid={isPaid}
             onSubscribe={handleSubscribe}
           />
+        )}
+        {mode !== "queue" && activeTab === "booking-intel" && (
+          <BookingIntelTab artist={artistData} isPaid={isPaid} onSubscribe={handleSubscribe} />
         )}
         {mode !== "queue" && activeTab === "ai-tools" && (
           <AIToolsTab artist={artistData} />
