@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
                     <p style="margin:0 0 32px;font-size:15px;color:#888;">Click the button below to set or reset your password. This link expires in 1 hour.</p>
                     <a href="${resetUrl}" style="display:inline-block;background:#6366f1;color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:600;">Set Your Password</a>
                     <p style="margin:32px 0 0;font-size:13px;color:#555;">If you didn't request this, you can safely ignore this email.<br/>Link expires in 1 hour and can only be used once.</p>
+                    <p style="margin:24px 0 0;font-size:12px;color:#666;">Need help? <a href="mailto:support@helmos.co" style="color:#a5b4fc;text-decoration:none;">support@helmos.co</a></p>
                   </td></tr>
                 </table>
               </td></tr>
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
           </body>
         </html>
       `,
-      text: `Set your Helm password\n\nClick this link to set or reset your password (expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, ignore this email.`,
+      text: `Set your Helm password\n\nClick this link to set or reset your password (expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, ignore this email.\n\nNeed help? support@helmos.co`,
     });
 
     return NextResponse.json({ ok: true });

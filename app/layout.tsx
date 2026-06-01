@@ -96,8 +96,16 @@ export default function RootLayout({
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
-        <footer className="w-full text-center py-4 text-xs text-zinc-600">
-          © 2026 Sierra Sounds LLC
+        <footer className="w-full text-center py-4 text-xs text-zinc-600 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4">
+          <span>© 2026 Sierra Sounds LLC</span>
+          <span className="text-zinc-700" aria-hidden="true">·</span>
+          <a href="/terms" className="hover:text-zinc-400 transition-colors">Terms</a>
+          <span className="text-zinc-700" aria-hidden="true">·</span>
+          <a href="/privacy" className="hover:text-zinc-400 transition-colors">Privacy</a>
+          <span className="text-zinc-700" aria-hidden="true">·</span>
+          <a href="/support" className="hover:text-zinc-400 transition-colors">Support</a>
+          <span className="text-zinc-700" aria-hidden="true">·</span>
+          <a href="mailto:support@helmos.co" className="hover:text-zinc-400 transition-colors">support@helmos.co</a>
         </footer>
         {/* Vercel Web Analytics — automatic pageview tracking + custom
             events. Free tier is 2,500 events/mo (plenty for Helm today).
