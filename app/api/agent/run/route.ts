@@ -5,6 +5,9 @@ import {
   getKnowledge, saveKnowledge, type Task,
 } from "@/lib/tasks";
 
+
+// Safety cap: Claude calls in this route can exceed Vercel's ~15s default.
+export const maxDuration = 60;
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Called by Vercel Cron every 30 minutes (GET) or manually (POST)

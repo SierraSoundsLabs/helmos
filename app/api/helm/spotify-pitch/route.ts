@@ -3,6 +3,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { fetchArtistData } from "@/lib/spotify";
 import { kvSet } from "@/lib/kv";
+// Safety cap: Claude calls in this route can exceed Vercel's ~15s default.
+export const maxDuration = 60;
+
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
