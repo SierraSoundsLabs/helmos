@@ -980,8 +980,125 @@ function HelmChat({
 }
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
+// ─── DAILY BRIEF CARD ─────────────────────────────────────────────────────────
+// The "good morning, here's what's happening" surface that makes Helm a
+// daily-habit product. Reads /api/helm/brief (assembled from KV: inbox,
+// outreach history, opportunities, one-sheet/bio state, upcoming shows)
+// and renders a short stat row + a single ranked "next action" CTA.
+interface BriefData {
+  unreadInboxCount: number;
+  sentToday: number;
+  openOpportunities: number;
+  lastOutreachAgeDays: number | null;
+  hasOneSheet: boolean;
+  hasBio: boolean;
+  upcomingShowsCount: number;
+  suggested: { label: string; detail: string; tab?: string; mission?: string };
+}
+
+function DailyBriefCard({
+  artistId, artistName, artistSlug, onOpenOutreachMission, onJumpToTab,
+}: {
+  artistId: string;
+  artistName: string;
+  artistSlug: string;
+  onOpenOutreachMission?: (mission: string) => void;
+  onJumpToTab?: (tab: string) => void;
+}) {
+  const [brief, setBrief] = useState<BriefData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/helm/brief?artistId=${encodeURIComponent(artistId)}&artistSlug=${encodeURIComponent(artistSlug)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d) setBrief(d); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [artistId, artistSlug]);
+
+  // Time-aware greeting (client-local).
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 5) return "Hey night owl";
+    if (h < 12) return "Good morning";
+    if (h < 18) return "Good afternoon";
+    return "Good evening";
+  })();
+
+  const handleAction = () => {
+    if (!brief) return;
+    const s = brief.suggested;
+    if (s.mission && onOpenOutreachMission) onOpenOutreachMission(s.mission);
+    else if (s.tab && onJumpToTab) onJumpToTab(s.tab);
+  };
+
+  // Render a slim shimmer while loading so the page doesn't jump.
+  if (loading) {
+    return (
+      <div className="bg-gradient-to-br from-[#6366f1]/10 to-[#8b5cf6]/5 border border-[#6366f1]/20 rounded-2xl p-5 animate-pulse">
+        <div className="h-4 w-48 bg-[#1a1a1a] rounded mb-3" />
+        <div className="h-3 w-72 bg-[#1a1a1a] rounded" />
+      </div>
+    );
+  }
+  if (!brief) return null;
+
+  // Stat chips — only show non-zero / meaningful ones.
+  const chips: { label: string; tone: "info" | "warn" | "ok" }[] = [];
+  if (brief.unreadInboxCount > 0) chips.push({ label: `${brief.unreadInboxCount} unread`, tone: "warn" });
+  if (brief.sentToday > 0) chips.push({ label: `${brief.sentToday} sent today`, tone: "ok" });
+  if (brief.openOpportunities > 0) chips.push({ label: `${brief.openOpportunities} new opportunities`, tone: "info" });
+  if (brief.upcomingShowsCount > 0) chips.push({ label: `${brief.upcomingShowsCount} upcoming show${brief.upcomingShowsCount === 1 ? "" : "s"}`, tone: "info" });
+  if (brief.lastOutreachAgeDays !== null && brief.lastOutreachAgeDays >= 7) {
+    chips.push({ label: `${brief.lastOutreachAgeDays}d since last outreach`, tone: "warn" });
+  }
+
+  return (
+    <div className="bg-gradient-to-br from-[#6366f1]/10 to-[#8b5cf6]/5 border border-[#6366f1]/25 rounded-2xl p-5 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] text-[#a5b4fc] font-semibold uppercase tracking-wider">Helm Daily Brief</p>
+          <p className="text-base sm:text-lg font-bold text-white mt-1">{greeting}, {artistName.split(" ")[0]}.</p>
+        </div>
+      </div>
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {chips.map(c => (
+            <span
+              key={c.label}
+              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                c.tone === "warn" ? "bg-amber-500/15 text-amber-300 border-amber-500/30" :
+                c.tone === "ok"   ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" :
+                                    "bg-[#6366f1]/15 text-[#a5b4fc] border-[#6366f1]/30"
+              }`}
+            >
+              {c.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-start gap-3 mt-1">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white">{brief.suggested.label}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">{brief.suggested.detail}</p>
+        </div>
+        <button
+          onClick={handleAction}
+          className="shrink-0 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#5558e8] transition-colors"
+        >
+          Do it →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function OverviewTab({
-  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks, chatPanelRef, hasBio, hasOneSheet, onOpenOutreachMission,
+  artistData, analysis, isPaid, onSubscribe, onSendChat, onGenerate, onRoyaltyAudit, chatMessages, isChatStreaming, isChatWaitingForUser, onNewOpportunityCount, realTasks, chatPanelRef, hasBio, hasOneSheet, onOpenOutreachMission, onJumpToTab,
 }: {
   artistData: ArtistData;
   analysis: AnalysisResult;
@@ -999,6 +1116,7 @@ function OverviewTab({
   hasBio?: boolean;
   hasOneSheet?: boolean;
   onOpenOutreachMission?: (mission: string) => void;
+  onJumpToTab?: (tab: string) => void;
 }) {
   const stage = analysis.careerStage || "Emerging";
   const stageConf = STAGE_CONFIG[stage as keyof typeof STAGE_CONFIG] || STAGE_CONFIG.Emerging;
@@ -1007,6 +1125,16 @@ function OverviewTab({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
       {/* Main content */}
       <div className="flex flex-col gap-6">
+        {/* Daily Brief — the ambient "what to do today" surface (paid only) */}
+        {isPaid && (
+          <DailyBriefCard
+            artistId={artistData.id}
+            artistName={artistData.name}
+            artistSlug={artistSlugFromName(artistData.name)}
+            onOpenOutreachMission={onOpenOutreachMission}
+            onJumpToTab={onJumpToTab}
+          />
+        )}
         {/* Tasks — real queue only */}
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -3449,6 +3577,19 @@ function DashboardContent() {
     setActiveTab("outreach");
   }, []);
 
+  // Generic tab-jump used by the Daily Brief card's "next action" CTAs.
+  const goToTab = useCallback((tab: string) => {
+    const allowed = ["overview", "works", "release", "links", "outreach", "ai-tools", "booking-intel"];
+    if (!allowed.includes(tab)) return;
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tab);
+      url.searchParams.delete("mission");
+      window.history.replaceState({}, "", url.toString());
+    }
+    setActiveTab(tab as "overview" | "works" | "release" | "links" | "outreach" | "ai-tools" | "booking-intel");
+  }, []);
+
   // Auth / paid state
   const [isPaid, setIsPaid] = useState(false);
   const [hasSession, setHasSession] = useState(false);
@@ -4345,6 +4486,7 @@ function DashboardContent() {
             hasBio={hasSavedBio}
             hasOneSheet={hasOneSheet}
             onOpenOutreachMission={openOutreachMission}
+            onJumpToTab={goToTab}
           />
         )}
         {mode !== "queue" && activeTab === "works" && (
