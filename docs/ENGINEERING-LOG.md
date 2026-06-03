@@ -4,6 +4,98 @@ Append-only journal — most recent at the top. Read at the start of each Claude
 
 ---
 
+## 2026-05-30 — Overnight batch (autonomous session while Rory slept)
+
+Branch `feat/overnight-batch`, 7 commits, opened as a single PR for
+Rory to review in the morning. Production untouched.
+
+Per Rory's strategic review:
+> "do all of this AND fix the popularity score… do all this in the order
+>  you recommend… I'm going to sleep and will check in on you in the
+>  morning."
+
+**1. fix(spotify):** `spotifyPopularity` was hardcoded to `0` in
+`lib/spotify.ts` — bug. Plumbed the real Spotify-API value through.
+Independently, Spotify has restricted client-credentials access to the
+`popularity` / `followers` / `genres` fields, so live calls return null
+today. Per Rory's instruction ("if you can't grab it, remove it"),
+the dashboard header "Spotify 0/100" badge and the Momentum sparkline
+are now gated on `> 0` — they disappear cleanly today and reappear
+automatically once Chartmetric is wired or Spotify restores access.
+
+**2. feat(outreach): Podcast mission + advice→action button redirects.**
+Five buttons that used to fire chat-advice messages now deep-link
+straight into the matching Outreach mission (real find-contacts + real
+send, not advice):
+- HelmChat empty-state "Find playlist curators" → Playlists mission
+- WorksTab latest-release "Pitch Playlist Curators" / "Pitch Journalists"
+  → Playlists / Press
+- ReleaseMarketingTab "Pitch Journalists" / "Press & Playlist Outreach"
+  → Press; "Podcast Pitch" → new Podcast mission
+New Podcast mission in `MISSIONS` (outletKind = music podcasts/interview
+shows; roleKeywords = host/producer/booking/guests). Deep-link is via a
+new `openOutreachMission` helper in DashboardContent that updates the
+URL (`?tab=outreach&mission=…`) and switches activeTab; OutreachTab
+honors the param via useEffect.
+
+Also fixed a preexisting SSR bug surfaced by the build:
+`components/BookingIntelTab.tsx` was importing `BookingMap` directly.
+Leaflet hits `window` at module load, so /dashboard's static prerender
+crashed with `ReferenceError: window is not defined`. Swapped to
+`dynamic(() => import("./BookingMap"), { ssr: false })`.
+
+**3. feat(legal+support):** New `/terms`, `/privacy`, `/support` pages.
+ToS covers subscription, AI-output disclaimer, email-on-behalf
+(CAN-SPAM responsibility), CA governing law. Privacy lists every
+subprocessor (Anthropic, Stripe, Resend, Spotify, Hunter, Vercel,
+Upstash, GoDaddy), retention, user rights, AI disclosure. Both topped
+with explicit "draft pending counsel review" notice. Support page is
+a friendly mailto landing with categorized request cards. Footer
+updated to link Terms / Privacy / Support / `support@helmos.co` on
+every page. Password-reset email gains a "Need help? support@helmos.co"
+signature in both HTML and plain-text bodies.
+
+**4. feat(brief): Daily Brief card** — the ambient daily-habit
+surface. New `/api/helm/brief` endpoint assembles `unreadInboxCount`,
+`sentToday`, `openOpportunities`, `lastOutreachAgeDays`,
+`hasOneSheet`, `hasBio`, `upcomingShowsCount` from existing KV, then
+derives ONE ranked "next action" (rules in priority order: unread
+inbox → no bio → no one-sheet → 7+ days since outreach → no shows →
+opportunities → playlist mission default). Rendered at the top of
+OverviewTab for paid users: time-aware greeting, stat chips (only the
+ones that matter), single CTA button that deep-links via either
+`openOutreachMission` or the new `goToTab` helper.
+
+**5. chore(api): maxDuration=60 safety cap** added to 10 Claude-using
+routes (chat, agent/run, generate, tiktok-strategy, opportunities/scan,
+growth-report, epk, spotify-pitch, royalty-audit, tasks/retry). PR #8
+fixed the same class of silent-timeout bug in outreach/generate; this
+prevents it from biting any other route.
+
+**Carried in but not mine — `chore: carry over local WIP for
+booking-intel`.** Rory had uncommitted booking-intel files in his
+workspace (new API routes, BookingIntelTab, BookingMap, lib/booking-
+intel.ts, leaflet deps). I committed them as-is so the branch was
+buildable; flagged in the commit message so he can edit / revert before
+merging if any aren't ready.
+
+### Deliberately deferred (with reasoning)
+- **Token tracking + meter / top-ups.** Instrumenting the streaming
+  chat route safely needs more care than was prudent overnight. Will
+  do as a focused session: a `lib/tokens.ts` recorder + wrap
+  outreach/generate + chat, /api/helm/tokens/today, meter widget. The
+  paying customer makes this important.
+- **Onboarding email sequence.** Design call.
+- **Account deletion flow.** GDPR-relevant; needs careful KV/Stripe
+  teardown logic. Not urgent overnight.
+- **Pre-Save campaign integration** — blocked on feature.fm API access.
+- **Hunter `domainSearch` caching** — Rory upgraded to Starter so the
+  urgency dropped; still good-to-have for cost.
+- **Disconnect `helmos-app` duplicate Vercel project** — Rory's
+  Vercel-UI action.
+
+---
+
 ## 2026-05-14 — Chat UI fixes + real OneSheet updates
 
 Rory reported (with screen recording):

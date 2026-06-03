@@ -2,6 +2,9 @@ import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { cookies } from "next/headers";
 import { decodeSession, COOKIE_NAME } from "@/lib/session";
+// Safety cap: Claude calls in this route can exceed Vercel's ~15s default.
+export const maxDuration = 60;
+
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 

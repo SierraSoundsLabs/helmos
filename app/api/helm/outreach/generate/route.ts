@@ -76,6 +76,13 @@ const MISSIONS: Record<string, MissionConfig> = {
     pitchGoal: "pitch the artist to play a show at the venue",
     needsCity: true,
   },
+  podcast: {
+    label: "Podcasts",
+    outletKind: "music podcasts, interview shows, and audio newsletters that feature {genre} artists",
+    roleKeywords: ["host", "producer", "booking", "guests", "interviews", "show", "podcast", "music", "contact"],
+    defaultRole: "Podcast Host",
+    pitchGoal: "pitch the artist as a guest for an interview or feature episode",
+  },
 };
 
 interface OutletSuggestion {
