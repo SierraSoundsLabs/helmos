@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
+import { startRecoveryFlow, markConverted } from "@/lib/recovery";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2026-02-25.clover" });
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
@@ -23,11 +24,38 @@ export async function POST(req: NextRequest) {
 
   // Handle relevant events
   switch (event.type) {
+    case "checkout.session.expired": {
+      // Win-back drip seed: someone started checkout but didn't complete.
+      // Stripe fires this ~24h after session creation by default. Stripe's
+      // own built-in recovery email handles the ~1h nudge; we layer
+      // Helm-branded T+0 (now), T+3d, and T+7d touches on top.
+      const session = event.data.object as Stripe.Checkout.Session;
+      const email = session.customer_email || session.customer_details?.email || "";
+      console.log(`Checkout session expired: email=${email || "(none)"} session=${session.id}`);
+      if (email) {
+        try {
+          await startRecoveryFlow({ email, checkoutSessionId: session.id });
+        } catch (err) {
+          console.error("startRecoveryFlow failed", err);
+        }
+      }
+      break;
+    }
     case "customer.subscription.created":
     case "customer.subscription.updated": {
       const sub = event.data.object as Stripe.Subscription;
       console.log(`Subscription ${event.type}: customer=${sub.customer}, status=${sub.status}`);
-      // Future: update DB subscription status here
+      // If this customer was mid-recovery, mark them converted so the cron
+      // skips them going forward.
+      if (event.type === "customer.subscription.created") {
+        try {
+          const customer = await stripe.customers.retrieve(sub.customer as string);
+          const email = (customer as Stripe.Customer).email;
+          if (email) await markConverted(email);
+        } catch (err) {
+          console.error("markConverted failed", err);
+        }
+      }
       break;
     }
     case "customer.subscription.deleted": {

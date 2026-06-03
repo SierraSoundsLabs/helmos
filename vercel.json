@@ -13,6 +13,10 @@
     {
       "path": "/api/agent/run",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/recovery/cron",
+      "schedule": "0 14 * * *"
     }
   ]
 }
