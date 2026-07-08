@@ -1,22 +1,41 @@
-// Booking Intel — Real venue discovery + talent buyer enrichment
-// Built for Helmos prototype. Uses existing Bandsintown + Hunter foundations.
+// Booking Intel — AI-driven venue discovery + Hunter talent-buyer enrichment.
+//
+// History: this module originally pulled venue lists from Bandsintown's past-
+// events feed (real tour history from similar artists). Bandsintown then
+// restricted their public API and the pull started returning nothing, so
+// the "Booking Intel" tab was silently broken in production for weeks.
+//
+// This rewrite replaces the dead Bandsintown path with a Claude call that
+// names real, currently-operating venues in the target city, sized to the
+// artist's draw. Hunter enrichment for talent-buyer contacts is unchanged.
+// The map + UX shell in components/BookingIntelTab.tsx still work.
+//
+// What we lose vs. the old prototype:
+//   - "This exact similar artist played here on this exact date" provenance.
+//     Bandsintown gave us that; Claude cannot. Instead we return a `whyMatch`
+//     sentence — Claude's reasoning for why the venue fits.
+// What we keep:
+//   - Real, verifiable venue names (Claude is very good at this — same call
+//     shape the outreach-mission venue path uses in production today)
+//   - Rough lat/lng for the map
+//   - Hunter contact discovery (unchanged)
 
-import { getBITPastEvents, BITEvent } from "./bandsintown";
+import Anthropic from "@anthropic-ai/sdk";
 import { discoverContactsForDomain, DiscoveredContact } from "./hunter";
 import type { ArtistData } from "./spotify";
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export interface VenueHit {
   venueName: string;
   city: string;
-  region?: string;
-  country?: string;
+  neighborhood?: string;
   latitude?: number;
   longitude?: number;
-  lastBookedSimilarArtist: string;
-  lastBookedDate: string;
-  eventUrl?: string;
-  matchScore: number; // 0-100
-  sourceArtist: string;
+  capacity?: number;
+  whyMatch: string;
+  matchScore: number; // 0-100, computed from capacity ↔ draw fit
+  knownDomain?: string; // If Claude knows the venue's real domain, we use it
 }
 
 export interface EnrichedVenue extends VenueHit {
@@ -25,129 +44,120 @@ export interface EnrichedVenue extends VenueHit {
   contactsError?: string;
 }
 
-/**
- * Simple but effective "similar artist" heuristic using data we already have.
- * In a real system this would use embeddings or a proper similarity service.
- */
-export function pickSimilarArtistSeeds(artist: ArtistData, count = 6): string[] {
-  const seeds: string[] = [];
-  const mainGenre = (artist.genres?.[0] || "indie").toLowerCase();
-
-  // Common comparable artist names per broad genre buckets (realistic for indie/alt/electronic/hip-hop)
-  const buckets: Record<string, string[]> = {
-    indie: ["Phoebe Bridgers", "Big Thief", "Japanese Breakfast", "Snail Mail", "Waxahatchee", "Soccer Mommy"],
-    "indie rock": ["Big Thief", "Phoebe Bridgers", "Alvvays", "The National", "Arcade Fire", "Vampire Weekend"],
-    rock: ["The Killers", "Arctic Monkeys", "Foo Fighters", "The Strokes", "Kings of Leon"],
-    electronic: ["Four Tet", "Floating Points", "Bonobo", "Odesza", "R\u00f6yksopp", "Caribou"],
-    "hip hop": ["Saba", "Noname", "Mick Jenkins", "Little Simz", "JID", "Smino"],
-    pop: ["Lorde", "Gracie Abrams", "Clairo", "Beabadoobee", "Olivia Rodrigo"],
-    folk: ["Adrianne Lenker", "Fleet Foxes", "Iron & Wine", "Bon Iver", "Brandi Carlile"],
-  };
-
-  const bucket = buckets[mainGenre] || buckets.indie;
-  const shuffled = [...bucket].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+interface VenueFromModel {
+  venueName?: string;
+  neighborhood?: string;
+  capacity?: number;
+  latitude?: number;
+  longitude?: number;
+  whyMatch?: string;
+  domain?: string;
 }
 
 /**
- * Core function: Given an artist, returns real venues that have booked similar artists recently.
- * This is the heart of the prototype — real data instead of LLM guesses.
+ * Ask Claude to name real, operating venues in `city` that fit `artist`.
+ * The prompt is deliberately narrow: real venues only, refuse to invent.
+ * We use the same "no hallucinated outlets" convention that the outreach
+ * mission generator has been running in production without incident.
  */
-export async function findRealVenuesFromSimilarArtists(
+export async function findVenuesByCity(
   artist: ArtistData,
-  targetCity?: string,
-  maxSimilar = 5,
-  eventsPerArtist = 8
+  city: string,
+  count = 12
 ): Promise<VenueHit[]> {
-  const seeds = pickSimilarArtistSeeds(artist, maxSimilar);
-  const allHits: VenueHit[] = [];
+  if (!city?.trim()) return [];
 
-  for (const seedName of seeds) {
-    try {
-      const events = await getBITPastEvents(seedName, eventsPerArtist);
-      for (const ev of events) {
-        const v = ev.venue;
-        if (!v?.name) continue;
-
-        // Optional city filter
-        if (targetCity && !v.city?.toLowerCase().includes(targetCity.toLowerCase())) {
-          continue;
-        }
-
-        const date = new Date(ev.datetime);
-        const dateStr = date.toISOString().split("T")[0];
-
-        allHits.push({
-          venueName: v.name,
-          city: v.city || "Unknown City",
-          region: v.region,
-          country: v.country,
-          latitude: v.latitude ? parseFloat(v.latitude) : undefined,
-          longitude: v.longitude ? parseFloat(v.longitude) : undefined,
-          lastBookedSimilarArtist: seedName,
-          lastBookedDate: dateStr,
-          eventUrl: ev.url,
-          matchScore: calculateMatchScore(artist, seedName, ev),
-          sourceArtist: seedName,
-        });
-      }
-    } catch (e) {
-      // Silent fail per artist — we want partial results
-      console.warn(`[Booking Intel] Failed to fetch events for ${seedName}`);
-    }
-  }
-
-  // Dedupe by venue+city, keep the most recent / highest scored
-  const deduped = dedupeAndScore(allHits);
-
-  // Sort by match score then recency
-  return deduped
-    .sort((a, b) => {
-      if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
-      return b.lastBookedDate.localeCompare(a.lastBookedDate);
-    })
-    .slice(0, 40); // Reasonable cap for prototype
-}
-
-function calculateMatchScore(artist: ArtistData, seedArtist: string, _event: BITEvent): number {
-  let score = 65; // base
-
-  const mainGenre = (artist.genres?.[0] || "").toLowerCase();
-  const seedLower = seedArtist.toLowerCase();
-
-  // Genre overlap bonus
-  if (mainGenre && seedLower.includes(mainGenre)) score += 18;
-  if (artist.genres?.some(g => seedLower.includes(g.toLowerCase()))) score += 10;
-
-  // Listener range similarity (rough)
   const listeners = artist.monthlyListeners || 0;
-  if (listeners > 500000) score += 5;
-  else if (listeners > 100000) score += 8;
-  else score += 12; // smaller artists often play more relatable rooms
+  const genres = (artist.genres || []).slice(0, 3).join(", ") || "indie";
+  const drawTier = listenerTierLabel(listeners);
 
-  // Recency bonus if event was recent (we don't have perfect data here, approximate)
-  score = Math.min(98, Math.max(50, score + Math.floor(Math.random() * 8)));
+  const prompt = `List ${count} real, currently-operating music venues in ${city} that would be a good fit for the artist ${artist.name} (${genres}, ${artist.monthlyListenersFormatted || listeners.toLocaleString()} monthly Spotify listeners — ${drawTier}).
 
-  return Math.round(score);
+Rules — read carefully:
+1. Only venues you are confident actually exist and currently book live music. If you're not sure, skip it. Better 6 real venues than 12 with guesses.
+2. Match the room size to the artist's draw tier (${drawTier}).
+3. For each venue provide approximate latitude/longitude coordinates (for a map pin). Rough is fine — city-block precision is not required.
+4. If you know the venue's real primary website domain (e.g. "mercuryeastpresents.com"), include it. Otherwise omit — do not guess.
+5. "whyMatch" is one short sentence explaining why THIS venue fits THIS artist. Reference the genre, capacity, or booking pattern — not made-up tour history.
+
+Return ONLY a JSON array (no prose), each item shaped:
+{
+  "venueName": "Exact real venue name",
+  "neighborhood": "e.g. Lower East Side",
+  "capacity": 250,
+  "latitude": 40.7215,
+  "longitude": -73.9895,
+  "whyMatch": "One sentence.",
+  "domain": "venuewebsite.com or omit"
+}`;
+
+  let raw = "";
+  try {
+    const msg = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 2000,
+      messages: [{ role: "user", content: prompt }],
+    });
+    raw = msg.content[0]?.type === "text" ? msg.content[0].text : "";
+  } catch (err) {
+    console.error("[Booking Intel] venue discovery LLM call failed:", err);
+    return [];
+  }
+
+  const jsonMatch = raw.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) return [];
+
+  let parsed: VenueFromModel[];
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter((v): v is VenueFromModel & { venueName: string; whyMatch: string } =>
+      typeof v?.venueName === "string" &&
+      v.venueName.trim().length > 0 &&
+      typeof v?.whyMatch === "string"
+    )
+    .map((v) => ({
+      venueName: v.venueName.trim(),
+      city,
+      neighborhood: v.neighborhood?.trim() || undefined,
+      capacity: typeof v.capacity === "number" ? v.capacity : undefined,
+      latitude: typeof v.latitude === "number" ? v.latitude : undefined,
+      longitude: typeof v.longitude === "number" ? v.longitude : undefined,
+      whyMatch: v.whyMatch.trim(),
+      matchScore: scoreCapacityFit(v.capacity, listeners),
+      knownDomain: v.domain?.trim() || undefined,
+    }));
 }
 
-function dedupeAndScore(hits: VenueHit[]): VenueHit[] {
-  const map = new Map<string, VenueHit>();
+function listenerTierLabel(listeners: number): string {
+  if (listeners < 5_000) return "DIY / very small rooms, 50–150 cap";
+  if (listeners < 25_000) return "small independent venues, 150–350 cap";
+  if (listeners < 100_000) return "mid-size independent clubs, 300–700 cap";
+  if (listeners < 500_000) return "established indie venues, 700–1,500 cap";
+  return "theaters and large indie rooms, 1,500+ cap";
+}
 
-  for (const hit of hits) {
-    const key = `${hit.venueName.toLowerCase()}|${hit.city.toLowerCase()}`;
-    const existing = map.get(key);
-
-    if (!existing || hit.matchScore > existing.matchScore) {
-      map.set(key, hit);
-    }
-  }
-  return Array.from(map.values());
+function scoreCapacityFit(capacity: number | undefined, listeners: number): number {
+  if (!capacity || capacity <= 0) return 70; // no data → neutral
+  // Rough model: an artist's ideal room is ~2% of their monthly-listener count,
+  // clamped. If the room is within 2× either direction we call it a strong fit.
+  const ideal = Math.max(80, Math.min(3000, listeners * 0.02));
+  const ratio = capacity / ideal;
+  const distance = Math.abs(Math.log2(ratio)); // 0 = perfect, 1 = 2× off, 2 = 4× off
+  const score = Math.round(95 - distance * 20);
+  return Math.max(45, Math.min(97, score));
 }
 
 /**
- * Enrich a list of venues with real talent buyer / booking contacts using Hunter.
- * This reuses the excellent existing discoverContactsForDomain logic.
+ * Enrich a list of venues with real talent-buyer contacts via Hunter.
+ * Uses the venue's Claude-provided domain when known, otherwise falls back
+ * to a rough domain guess. Preserves the "prototype-quality but useful"
+ * behavior the original module had here.
  */
 export async function enrichVenuesWithContacts(
   venues: VenueHit[],
@@ -159,25 +169,23 @@ export async function enrichVenuesWithContacts(
     const v = venues[i];
     onProgress?.(i, venues.length);
 
-    // Try to guess a plausible domain from venue name (very rough but good enough for prototype)
-    const guessedDomain = guessVenueDomain(v.venueName, v.city);
-
+    const domain = v.knownDomain || guessVenueDomain(v.venueName);
     let contacts: DiscoveredContact[] = [];
     let error: string | undefined;
 
-    if (guessedDomain) {
+    if (domain) {
       try {
         contacts = await discoverContactsForDomain(
-          guessedDomain,
+          domain,
           v.venueName,
           ["booking", "talent buyer", "talent", "promoter", "events", "programming", "calendar", "booker"],
           8
         );
-      } catch (e) {
+      } catch {
         error = "Contact lookup failed";
       }
     } else {
-      error = "No domain found for this venue";
+      error = "No domain available for this venue";
     }
 
     enriched.push({
@@ -191,38 +199,12 @@ export async function enrichVenuesWithContacts(
   return enriched;
 }
 
-function guessVenueDomain(venueName: string, city: string): string | null {
+function guessVenueDomain(venueName: string): string | null {
   const cleaned = venueName
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, "")
     .trim()
     .replace(/\s+/g, "");
-
   if (cleaned.length < 4) return null;
-
-  // Common patterns
-  const candidates = [
-    `${cleaned}.com`,
-    `${cleaned}.co`,
-    `${cleaned}.net`,
-    `${cleaned}${city.toLowerCase().replace(/\s/g, "")}.com`,
-  ];
-
-  // For prototype we just return the most plausible one.
-  // In production we'd do real web search or known venue database.
-  return candidates[0];
-}
-
-/**
- * Generate nice pitch context for a venue + contact (used by outreach).
- */
-export function generatePitchContext(venue: EnrichedVenue, contact?: DiscoveredContact, artist?: ArtistData) {
-  return {
-    venueName: venue.venueName,
-    city: venue.city,
-    lastSimilar: `${venue.lastBookedSimilarArtist} on ${new Date(venue.lastBookedDate).toLocaleDateString()}`,
-    contactName: contact?.name,
-    contactTitle: contact?.position,
-    suggestedEmail: contact?.email,
-  };
+  return `${cleaned}.com`;
 }

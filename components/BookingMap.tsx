@@ -59,9 +59,12 @@ export default function BookingMap({ venues, onVenueSelect, selectedVenueId }: B
               <Popup className="booking-popup">
                 <div className="text-sm">
                   <div className="font-semibold text-white">{venue.venueName}</div>
-                  <div className="text-zinc-400">{venue.city}</div>
-                  <div className="mt-1 text-[11px] text-emerald-400">
-                    Last booked {venue.lastBookedSimilarArtist} • {new Date(venue.lastBookedDate).toLocaleDateString()}
+                  <div className="text-zinc-400">
+                    {venue.neighborhood ? `${venue.neighborhood} · ` : ""}{venue.city}
+                    {venue.capacity ? ` · ~${venue.capacity} cap` : ""}
+                  </div>
+                  <div className="mt-1 text-[11px] text-zinc-300 leading-snug">
+                    {venue.whyMatch}
                   </div>
                   <div className="mt-1">
                     <span className="inline-block px-2 py-0.5 text-[10px] rounded bg-teal-500/20 text-teal-400">
