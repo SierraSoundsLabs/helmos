@@ -16,6 +16,7 @@ import { toSlug, artistEmail } from "@/lib/email";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
 import BookingIntelTab from "@/components/BookingIntelTab";
+import InstallAppBanner from "@/components/InstallAppBanner";
 
 // Dynamically import map to avoid SSR issues with Leaflet
 const BookingMap = dynamic(() => import("@/components/BookingMap"), { ssr: false });
@@ -4355,6 +4356,10 @@ function DashboardContent() {
           </div>
         </div>
       </nav>
+
+      {/* PWA install hint — mobile + paid only; dismissable for 14 days.
+          Renders nothing on desktop or if the app is already installed. */}
+      <InstallAppBanner eligible={isPaid} />
 
       {/* Artist header + tabs */}
       <div className="border-b border-[#1a1a1a] px-6">
