@@ -6,7 +6,7 @@ import {
   verifyPassword,
   type PasswordRecord,
 } from "@/lib/password";
-import { buildSessionAndRedirect } from "@/lib/auth";
+import { buildSessionAndRedirect, isFounderEmail } from "@/lib/auth";
 
 // hashPassword/verifyPassword and buildSessionAndRedirect live in lib/
 // (also used by /api/auth/reset-password/confirm).
@@ -86,8 +86,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const customer = await findStripeCustomer(email);
-    if (!customer) {
+    // Founder bypass: operator emails can log in without a paid Stripe
+    // subscription. Empty customerId/artistId is fine — the redirect logic
+    // in buildSessionAndRedirect handles the "logged in but no artist" case.
+    const founder = isFounderEmail(email);
+    const customer = founder ? null : await findStripeCustomer(email);
+    if (!founder && !customer) {
       return NextResponse.json(
         {
           error:
@@ -100,8 +104,8 @@ export async function POST(req: NextRequest) {
 
     return buildSessionAndRedirect(
       email,
-      customer.customerId,
-      customer.artistId
+      customer?.customerId ?? "",
+      customer?.artistId ?? ""
     );
   } catch (err) {
     console.error("password auth error", err);

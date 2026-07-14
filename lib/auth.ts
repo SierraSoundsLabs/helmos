@@ -10,6 +10,26 @@ import { kvGet } from "@/lib/kv";
 import { encodeSession, COOKIE_NAME, TTL } from "@/lib/session";
 import type { UserProfile } from "@/lib/tasks";
 
+// Founder / operator emails that can authenticate without a paid Stripe
+// subscription. Two sources:
+//   1. HELM_FOUNDER_EMAILS env var (comma-separated) — normal path
+//   2. FOUNDER_FALLBACK below — hardcoded backstop so a missing env var
+//      can't lock the founder out of their own product
+//
+// This is not an "admin roles" system. It exists so support-ops (Rory)
+// can log in without being a $29/mo subscriber.
+const FOUNDER_FALLBACK = ["rory@goodmornmusic.com"];
+
+export function isFounderEmail(email: string): boolean {
+  const normalized = (email || "").trim().toLowerCase();
+  if (!normalized) return false;
+  const envList = (process.env.HELM_FOUNDER_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return envList.includes(normalized) || FOUNDER_FALLBACK.includes(normalized);
+}
+
 /**
  * Issue a session cookie and resolve where to send the user next.
  *

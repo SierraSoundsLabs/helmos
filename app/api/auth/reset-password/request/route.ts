@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { kvSet } from "@/lib/kv";
 import { sendEmail } from "@/lib/email";
 import { findStripeCustomer } from "@/lib/stripe";
+import { isFounderEmail } from "@/lib/auth";
 import crypto from "crypto";
 
 const RESET_TOKEN_TTL = 3600; // 1 hour
@@ -16,10 +17,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const customer = await findStripeCustomer(email);
+    const founder = isFounderEmail(email);
 
     // Don't reveal whether the email belongs to a subscriber — always return ok.
-    // No-op silently if there's no matching customer.
-    if (!customer) {
+    // No-op silently if there's no matching customer, UNLESS the caller is a
+    // founder / operator (login for them isn't gated on paid Stripe status).
+    if (!customer && !founder) {
       return NextResponse.json({ ok: true });
     }
 
