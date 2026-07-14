@@ -87,10 +87,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Founder bypass: operator emails can log in without a paid Stripe
-    // subscription. Empty customerId/artistId is fine — the redirect logic
-    // in buildSessionAndRedirect handles the "logged in but no artist" case.
+    // subscription. But we ALWAYS look up Stripe first — founders who
+    // ARE also paying subscribers (e.g. Rory paying for his own artist
+    // Jiwon) need their customerId + artistId loaded onto the session
+    // so the dashboard finds the right artist. The founder bypass just
+    // means "don't reject when the Stripe lookup returns null."
     const founder = isFounderEmail(email);
-    const customer = founder ? null : await findStripeCustomer(email);
+    const customer = await findStripeCustomer(email);
     if (!founder && !customer) {
       return NextResponse.json(
         {

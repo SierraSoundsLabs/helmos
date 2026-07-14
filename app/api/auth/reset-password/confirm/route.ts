@@ -48,12 +48,13 @@ export async function POST(req: NextRequest) {
     // Consume the token — one-time use
     await kvDel(tokenKey);
 
-    // Look up Stripe customer to build a session. Founders (operator
-    // emails) skip the paid-subscription check — the password is now
-    // stored either way, but we still need to decide whether to issue
-    // a session cookie.
+    // Look up Stripe customer to build a session. ALWAYS run the lookup —
+    // founders who are also paying subscribers need their customerId +
+    // artistId on the session so the dashboard finds the right artist.
+    // The founder bypass just means we don't reject when Stripe returns
+    // null; we don't skip the lookup itself.
     const founder = isFounderEmail(email);
-    const customer = founder ? null : await findStripeCustomer(email);
+    const customer = await findStripeCustomer(email);
     if (!founder && !customer) {
       // Edge case: subscription was canceled between request and confirm.
       // Password is set, but no session.
