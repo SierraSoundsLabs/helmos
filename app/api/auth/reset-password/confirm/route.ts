@@ -5,7 +5,7 @@ import {
   makeNewPasswordRecord,
   type PasswordRecord,
 } from "@/lib/password";
-import { buildSessionAndRedirect } from "@/lib/auth";
+import { buildSessionAndRedirect, isFounderEmail } from "@/lib/auth";
 
 interface ResetTokenData {
   email: string;
@@ -48,9 +48,13 @@ export async function POST(req: NextRequest) {
     // Consume the token — one-time use
     await kvDel(tokenKey);
 
-    // Look up Stripe customer to build a session
-    const customer = await findStripeCustomer(email);
-    if (!customer) {
+    // Look up Stripe customer to build a session. Founders (operator
+    // emails) skip the paid-subscription check — the password is now
+    // stored either way, but we still need to decide whether to issue
+    // a session cookie.
+    const founder = isFounderEmail(email);
+    const customer = founder ? null : await findStripeCustomer(email);
+    if (!founder && !customer) {
       // Edge case: subscription was canceled between request and confirm.
       // Password is set, but no session.
       return NextResponse.json(
@@ -64,8 +68,8 @@ export async function POST(req: NextRequest) {
 
     return buildSessionAndRedirect(
       email,
-      customer.customerId,
-      customer.artistId
+      customer?.customerId ?? "",
+      customer?.artistId ?? ""
     );
   } catch (err) {
     console.error("reset-password/confirm error", err);
