@@ -994,6 +994,7 @@ interface BriefData {
   hasOneSheet: boolean;
   hasBio: boolean;
   upcomingShowsCount: number;
+  soundExchangeRegistered: number | null;
   suggested: { label: string; detail: string; tab?: string; mission?: string };
 }
 
@@ -1011,7 +1012,7 @@ function DailyBriefCard({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/helm/brief?artistId=${encodeURIComponent(artistId)}&artistSlug=${encodeURIComponent(artistSlug)}`)
+    fetch(`/api/helm/brief?artistId=${encodeURIComponent(artistId)}&artistSlug=${encodeURIComponent(artistSlug)}&artistName=${encodeURIComponent(artistName)}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (!cancelled && d) setBrief(d); })
       .catch(() => {})
@@ -1054,6 +1055,9 @@ function DailyBriefCard({
   if (brief.upcomingShowsCount > 0) chips.push({ label: `${brief.upcomingShowsCount} upcoming show${brief.upcomingShowsCount === 1 ? "" : "s"}`, tone: "info" });
   if (brief.lastOutreachAgeDays !== null && brief.lastOutreachAgeDays >= 7) {
     chips.push({ label: `${brief.lastOutreachAgeDays}d since last outreach`, tone: "warn" });
+  }
+  if (brief.soundExchangeRegistered !== null && brief.soundExchangeRegistered > 0) {
+    chips.push({ label: `${brief.soundExchangeRegistered} SoundExchange ISRC${brief.soundExchangeRegistered === 1 ? "" : "s"}`, tone: "info" });
   }
 
   return (

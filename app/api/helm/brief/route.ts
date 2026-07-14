@@ -6,7 +6,8 @@
 
 import { NextRequest } from "next/server";
 import { getSession } from "@/lib/session";
-import { kvGet } from "@/lib/kv";
+import { kvGet, kvSet } from "@/lib/kv";
+import { getSoundExchangeCount, type SoundExchangeCount } from "@/lib/soundexchange";
 import type { InboundEmail } from "@/app/api/helm/outreach/webhook/route";
 import type { OutreachRecord } from "@/app/api/helm/outreach/send/route";
 import type { UpcomingShow } from "@/lib/types";
@@ -30,6 +31,10 @@ export interface DailyBrief {
   hasOneSheet: boolean;
   hasBio: boolean;
   upcomingShowsCount: number;
+  // Number of recordings SoundExchange has under this artist's name.
+  // null = not yet checked / lookup failed. Cached for 7 days per artist
+  // to keep dashboard load fast. Used to suggest the royalty audit.
+  soundExchangeRegistered: number | null;
   suggested: BriefSuggestedAction;
 }
 
@@ -48,8 +53,11 @@ export async function GET(req: NextRequest) {
     });
   }
   const artistSlug = (req.nextUrl.searchParams.get("artistSlug") || "").toLowerCase();
+  const artistName = req.nextUrl.searchParams.get("artistName") || "";
 
-  // Pull all the small reads in parallel.
+  // Pull all the small reads in parallel — plus the cached SoundExchange
+  // count if we've looked it up before.
+  const seCacheKey = `helm:artist:${artistId}:soundexchange:count`;
   const [
     inboxIds,
     outreachIds,
@@ -57,6 +65,7 @@ export async function GET(req: NextRequest) {
     bio,
     showsRaw,
     opportunities,
+    seCached,
   ] = await Promise.all([
     artistSlug ? kvGet<string[]>(`inbox-ids:${artistSlug}`).then(ids => ids ?? []) : Promise.resolve([] as string[]),
     kvGet<string[]>(`outreach-ids:${artistId}`).then(ids => ids ?? []),
@@ -64,6 +73,7 @@ export async function GET(req: NextRequest) {
     kvGet<unknown>(`helm:artist:${artistId}:bio`),
     kvGet<UpcomingShow[]>(`helm:artist:${artistId}:upcoming-shows`),
     kvGet<{ status?: string }[]>(`helm:user:${session.email}:opportunities`),
+    kvGet<SoundExchangeCount>(seCacheKey),
   ]);
 
   // Unread inbox = inbound emails where `read !== true`. Pull only the latest
@@ -97,6 +107,24 @@ export async function GET(req: NextRequest) {
     o => o.status === "new" || o.status === "approved"
   ).length;
 
+  // SoundExchange count: prefer cached; if missing AND artistName is
+  // known, do a live lookup and cache for 7 days. On timeout/error we
+  // return null and try again next brief pull.
+  let soundExchangeRegistered: number | null = null;
+  if (seCached && typeof seCached.count === "number") {
+    soundExchangeRegistered = seCached.count;
+  } else if (artistName) {
+    const live = await getSoundExchangeCount(artistName);
+    if (live !== null) {
+      soundExchangeRegistered = live;
+      await kvSet(
+        seCacheKey,
+        { count: live, checkedAt: new Date().toISOString() } as SoundExchangeCount,
+        60 * 60 * 24 * 7
+      );
+    }
+  }
+
   const suggested = pickSuggestedAction({
     unreadInboxCount,
     openOpportunities,
@@ -104,6 +132,7 @@ export async function GET(req: NextRequest) {
     hasOneSheet: !!onesheet,
     hasBio: !!bio,
     upcomingShowsCount: upcomingShows.length,
+    soundExchangeRegistered,
   });
 
   const brief: DailyBrief = {
@@ -116,6 +145,7 @@ export async function GET(req: NextRequest) {
     hasOneSheet: !!onesheet,
     hasBio: !!bio,
     upcomingShowsCount: upcomingShows.length,
+    soundExchangeRegistered,
     suggested,
   };
 
@@ -133,6 +163,7 @@ function pickSuggestedAction(s: {
   hasOneSheet: boolean;
   hasBio: boolean;
   upcomingShowsCount: number;
+  soundExchangeRegistered: number | null;
 }): BriefSuggestedAction {
   if (s.unreadInboxCount > 0) {
     return {
@@ -153,6 +184,17 @@ function pickSuggestedAction(s: {
       label: "Publish your one-sheet",
       detail: "A real helmos.co/{you} page for press and bookings — ~30 seconds to generate.",
       tab: "overview",
+    };
+  }
+  // "Hidden money" — surface unclaimed royalty exposure once foundation is
+  // in place. Ranked above cold-start outreach because there's a real
+  // dollar figure attached and it only fires when we've confirmed the
+  // artist actually has SoundExchange registrations.
+  if (s.soundExchangeRegistered !== null && s.soundExchangeRegistered > 0) {
+    return {
+      label: `Run your royalty audit — ${s.soundExchangeRegistered} SoundExchange registration${s.soundExchangeRegistered === 1 ? "" : "s"}`,
+      detail: "Verified recordings sitting in the SoundExchange registry. Helm cross-checks them against your catalog to flag anything unclaimed.",
+      tab: "ai-tools",
     };
   }
   if (s.lastOutreachAgeDays === null || s.lastOutreachAgeDays >= 7) {
